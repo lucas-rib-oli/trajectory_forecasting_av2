@@ -193,7 +193,7 @@ class TransformerTrain ():
                 # tgt = tgt.double()
                 
                 # Generate a square mask for the sequence
-                src_mask = torch.zeros(tgt.size()[1], tgt.size()[1]).to(self.device)
+                src_mask = torch.zeros(src.size()[1], src.size()[1]).to(self.device)
                 
                 # Get the start of the sequence
                 # dec_inp = torch.zeros()
