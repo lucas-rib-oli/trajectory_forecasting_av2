@@ -1,0 +1,21 @@
+{
+  "num_layers": 2,
+  "d_model": 512,
+  "nhead": 8,
+  "num_encoder_layers": 6,
+  "dim_feedforward" : 2048,
+  "enc_inp_size" : 4,
+  "dec_inp_size" : 4,
+  "dec_out_size" : 4,
+  "dropout": 0.1,
+  "opt_warmup" : 5,
+  "opt_factor" : 0.1,
+  "num_epochs": 1000,
+  "lr": 1e-4,
+  "batch_size": 64,
+  "sequence_length": 8,
+  "num_workers" : 8,
+  "device" : "cuda:0",
+  "experiment_name" : "transHuberLoss_noamOpt_normData_deltaGlobal_xyz_L2_greedy_val",
+  "resume_train" : false
+}
