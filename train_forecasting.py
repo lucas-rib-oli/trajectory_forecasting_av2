@@ -113,7 +113,6 @@ class TransformerTrain ():
         # set network in train mode
         self.model.train()
         # Epochs
-        size = len(self.train_dataloader.dataset)
         for self.epoch in range(self.num_epochs):
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
