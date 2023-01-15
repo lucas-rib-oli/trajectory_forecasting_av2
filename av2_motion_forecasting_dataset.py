@@ -102,26 +102,89 @@ class Av2MotionForecastingDataset (Dataset):
         static_map_path = scenario_path.parents[0] / f"log_map_archive_{scenario_id}.json"
         try:
             scenario = scenario_serialization.load_argoverse_scenario_parquet(scenario_path)
-        static_map = ArgoverseStaticMap.from_json(static_map_path)
+        except:
+            print(Fore.RED + 'Fail to read: ' + Fore.RESET, scenario_path)
+            return
+        # static_map = ArgoverseStaticMap.from_json(static_map_path)
+        
+        scenario_src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
+        scenario_tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         
         # Get trajectories
         for track in scenario.tracks:
-            # Only get the vehicles
-            if track.object_type != ObjectType.VEHICLE:
+            # Only get the vehicles and dont save the ego-vehicle (AV)
+            if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                 continue
             # Get timesteps for which actor data is valid
             actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states if object_state.timestep < _TOTAL_DURATION_TIMESTEPS] )
             if actor_timesteps.shape[0] < 1 or actor_timesteps.shape[0] != _TOTAL_DURATION_TIMESTEPS:
                 continue
             # Get actor trajectory and heading history and instantaneous velocity
-            actor_trajectory: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] + list(object_state.velocity) for object_state in track.object_states if object_state.timestep < _TOTAL_DURATION_TIMESTEPS] )
+            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] for object_state in track.object_states if object_state.timestep < _TOTAL_DURATION_TIMESTEPS] )
             # Get source actor trajectory and heading history -> observerd or historical trajectory
-            src_actor_trajectory = actor_trajectory[:_OBS_DURATION_TIMESTEPS]
+            src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
             # Get target actor trajectory and heading history -> forescated or predicted trajectory
-            tgt_actor_trajectory = actor_trajectory[_OBS_DURATION_TIMESTEPS:_TOTAL_DURATION_TIMESTEPS]
+            tgt_actor_trajectory = actor_state[_OBS_DURATION_TIMESTEPS:_TOTAL_DURATION_TIMESTEPS]
             
-            self.src_actor_trajectory_by_id[track.track_id] = src_actor_trajectory
-            self.tgt_actor_trajectory_by_id[track.track_id] = tgt_actor_trajectory
+            scenario_src_actor_trajectory_by_id[track.track_id] = src_actor_trajectory
+            scenario_tgt_actor_trajectory_by_id[track.track_id] = tgt_actor_trajectory
+        
+        if scenario.focal_track_id in scenario_tgt_actor_trajectory_by_id.keys():
+            # Get the final observed trajectory of the focal agent
+            focal_coordinate = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][-1, 0:2]
+            
+            src_full_traj = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][:, 0:2]
+            tgt_full_traj = scenario_tgt_actor_trajectory_by_id[scenario.focal_track_id][:, 0:2]
+            
+            heading_vector = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][-1, 2:4]
+            sin_heading = heading_vector[0]
+            cos_heading = heading_vector[1]
+            
+            
+            src_zeros_vector = np.zeros((src_full_traj.shape[0], 1))
+            src_ones_vector = np.ones((src_full_traj.shape[0], 1))
+            tgt_zeros_vector = np.zeros((tgt_full_traj.shape[0], 1))
+            tgt_ones_vector = np.ones((tgt_full_traj.shape[0], 1))
+            
+            rot_matrix = np.array([[cos_heading, -sin_heading, 0, 0],
+                                   [sin_heading,  cos_heading, 0, 0],
+                                   [          0,            0, 1, 0],
+                                   [          0,            0, 0, 1]])
+
+            # Transform all trajectories
+            for track_id in scenario_tgt_actor_trajectory_by_id.keys():
+                src_agent_coordinate = scenario_src_actor_trajectory_by_id[track_id][:, 0:2]
+                tgt_agent_coordinate = scenario_tgt_actor_trajectory_by_id[track_id][:, 0:2]
+                
+                # Add Z --> 0
+                src_agent_coordinate = np.append (src_agent_coordinate, src_zeros_vector, axis=1)
+                src_agent_coordinate = np.append (src_agent_coordinate, src_ones_vector, axis=1)
+                tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_zeros_vector, axis=1)
+                tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_ones_vector, axis=1)
+                # Substract the center
+                src_agent_coordinate = src_agent_coordinate - np.append (focal_coordinate, [0, 0])
+                tgt_agent_coordinate = tgt_agent_coordinate - np.append (focal_coordinate, [0, 0])
+                
+                # Transformed trajectory
+                src_agent_coordinate_tf = np.dot(rot_matrix, src_agent_coordinate.T).T
+                tgt_agent_coordinate_tf = np.dot(rot_matrix, tgt_agent_coordinate.T).T
+                # plt.plot(src_agent_coordinate_tf[:,0], src_agent_coordinate_tf[:,1], color=(1,0,0), linewidth=1)
+                # plt.plot(tgt_agent_coordinate_tf[:,0], tgt_agent_coordinate_tf[:,1], color=(0,1,0), linewidth=1)
+                # plt.xlabel('X')
+                # plt.ylabel('Y')
+                # plt.show()
+                
+                # Save the trajectory
+                self.src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf[:, 0:2]
+                self.tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf[:, 0:2]
+        else:
+            # Not found focal agent or target agent
+            # Delete scenario
+            for track in scenario.tracks:
+                if track.track_id in scenario_tgt_actor_trajectory_by_id.keys():
+                    del scenario_src_actor_trajectory_by_id[track.track_id]
+                    del scenario_tgt_actor_trajectory_by_id[track.track_id]
+        
     # ===================================================================================== #
     def __prepare_data (self) -> list:
         src_sequences = []
@@ -146,8 +209,4 @@ class Av2MotionForecastingDataset (Dataset):
         sample = {}
         sample ['src'] = torch.tensor(self.src_sequences[idx], dtype=torch.float32)
         sample ['tgt'] = torch.tensor(self.tgt_sequences[idx], dtype=torch.float32)
-        return sample
-        
-            
-                
-                
+        return sample           
