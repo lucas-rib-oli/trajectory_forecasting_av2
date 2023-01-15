@@ -44,6 +44,34 @@ class Av2MotionForecastingDataset (Dataset):
         else:
             """
             idx = 0
+            begin = 0
+            end = 0
+            threads = list()
+            scenario_path_splitted = list()
+            num_threads = 32
+            length = int (len(all_scenario_files) / num_threads)
+            remainder = int (len(all_scenario_files) % num_threads)
+            
+            for _ in range (0, min(len(all_scenario_files), num_threads)):
+                if remainder > 0:
+                    if remainder == 0:
+                        end += length
+                    else:
+                        end += length + 1
+                    remainder -= 1
+                else:
+                    end += length
+                scenario_path_splitted.append (all_scenario_files[begin:end])
+                begin = end
+            
+            for i in range(0, len(scenario_path_splitted)):
+                x = threading.Thread(target=self.__generate_scenario_parallel, args=(scenario_path_splitted[i],))
+                threads.append(x)
+                x.start()
+            # Join threads
+            for index, thread in track(enumerate(threads)):
+                thread.join()
+            """         
         for scenario_path in track(all_scenario_files):
             self.__generate_scenario(scenario_path)
             idx += 1
@@ -72,7 +100,8 @@ class Av2MotionForecastingDataset (Dataset):
         # ----------------------------------------------------------------------- #
         scenario_id = scenario_path.stem.split("_")[-1]
         static_map_path = scenario_path.parents[0] / f"log_map_archive_{scenario_id}.json"
-        scenario = scenario_serialization.load_argoverse_scenario_parquet(scenario_path)
+        try:
+            scenario = scenario_serialization.load_argoverse_scenario_parquet(scenario_path)
         static_map = ArgoverseStaticMap.from_json(static_map_path)
         
         # Get trajectories
