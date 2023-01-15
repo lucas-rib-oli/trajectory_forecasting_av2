@@ -33,16 +33,35 @@ class Av2MotionForecastingDataset (Dataset):
         
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-        np
-        
-        idx = 0
+        # Check if exists processed trajectories 
+        self.path_2_save_src = os.path.join('pickle_data/', str(split + '_src_trajectory_data.pickle'))
+        self.path_2_save_tgt = os.path.join('pickle_data/', str(split + '_tgt_trajectory_data.pickle'))
+        if load_pickle:
+            with open(self.path_2_save_src, 'rb') as f:
+                self.src_actor_trajectory_by_id = pickle.load(f)
+            with open(self.path_2_save_tgt, 'rb') as f:
+                self.tgt_actor_trajectory_by_id = pickle.load(f)
+        else:
+            """
+            idx = 0
         for scenario_path in track(all_scenario_files):
             self.__generate_scenario(scenario_path)
             idx += 1
             if idx > 5:
                 break
         self.src_sequences, self.tgt_sequences = self.__prepare_data()
-        
+    # ===================================================================================== #   
+    def __save_trajectories (self):
+        print ('saving')
+        # Save the trajectories in a pickle
+        with open(self.path_2_save_src, 'wb') as f:
+            pickle.dump(self.src_actor_trajectory_by_id, f)
+        with open(self.path_2_save_tgt, 'wb') as f:
+            pickle.dump(self.tgt_actor_trajectory_by_id, f)
+    # ===================================================================================== #
+    def __generate_scenario_parallel (self, scenarios_path: List) -> None:
+        for scenario_path in scenarios_path:
+            self.__generate_scenario(scenario_path)
     # ===================================================================================== #
     def __generate_scenario (self, scenario_path: Path) -> None:
         """_summary_
