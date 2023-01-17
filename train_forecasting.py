@@ -149,11 +149,11 @@ class TransformerTrain ():
                 # dec_input = tgt
                 
                 # Generate a square mask for the sequence
-                src_mask = torch.zeros(src.size()[1], src.size()[1]).to(self.device)
-                tgt_mask = nn.Transformer.generate_square_subsequent_mask(tgt.size()[1]).to(self.device)
-                                
+                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(src, tgt)
+                   
                 # Output model
-                pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask)
+                                   # x-7 ... x0 | x1 ... x7
+                pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask) # return -> x1 ... x7
                 loss = self.loss_fn(pred, tgt)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
@@ -225,7 +225,7 @@ class TransformerTrain ():
                 # Apply Greedy Code
                 for _ in range (0, self.sequence_length - 1):
                     # Get target mask
-                    tgt_mask = (nn.Transformer.generate_square_subsequent_mask(dec_inp.size()[1])).to(self.device)
+                    tgt_mask = (self.generate_square_subsequent_mask(dec_inp.size()[1])).type(torch.bool).to(self.device)
                     # Get tokens
                     out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
                     # Generate the prediction
