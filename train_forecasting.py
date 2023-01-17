@@ -111,19 +111,20 @@ class TransformerTrain ():
     # ===================================================================================== #
     def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
         """Generates an upper-triangular matrix of -inf, with zeros on diag."""
-        print ('--------------- SUBSEQN MASK ---------------')
         mask = (torch.triu(torch.ones((sz, sz), device=self.device)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
-    def create_mask(self, src, tgt):
-        src_seq_len = src.shape[0]
-        tgt_seq_len = tgt.shape[0]
-
+    def create_mask(self, src: torch.Tensor, tgt: torch.Tensor):
+        src_seq_len = src.shape[1]
+        tgt_seq_len = tgt.shape[1]
+        batch_size = src.shape[0]
+        
         tgt_mask = self.generate_square_subsequent_mask(tgt_seq_len)
         src_mask = torch.zeros((src_seq_len, src_seq_len),device=self.device).type(torch.bool)
 
-        src_padding_mask = (src == 1).transpose(0, 1)
-        tgt_padding_mask = (tgt == 1).transpose(0, 1)     
+        src_padding_mask = torch.zeros((batch_size, src_seq_len),device=self.device).type(torch.bool)
+        tgt_padding_mask = torch.zeros((batch_size, tgt_seq_len),device=self.device).type(torch.bool)
+        
         return src_mask, tgt_mask, src_padding_mask, tgt_padding_mask
     # ===================================================================================== #
     def train(self):
