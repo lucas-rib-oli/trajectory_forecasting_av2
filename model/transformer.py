@@ -110,3 +110,10 @@ class LinearEmbedding(nn.Module):
 
     def forward(self, x):
         return self.lut(x) * np.sqrt(self.d_model)
+
+
+def generate_square_subsequent_mask(sz: int) -> torch.Tensor:
+    """Generates an upper-triangular matrix of -inf, with zeros on diag."""
+    mask = (torch.triu(torch.ones((sz, sz))) == 1).transpose(0, 1)
+    mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+    return mask
