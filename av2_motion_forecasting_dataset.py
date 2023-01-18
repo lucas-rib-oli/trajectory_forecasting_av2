@@ -114,14 +114,14 @@ class Av2MotionForecastingDataset (Dataset):
         # Get trajectories
         for track in scenario.tracks:
             # Only get the vehicles and dont save the ego-vehicle (AV)
-            if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
+            if track.object_type != ObjectType.VEHICLE or track.track_id == "AV" or track.track_id != scenario.focal_track_id:
                 continue
             # Get timesteps for which actor data is valid
-            actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states if object_state.timestep < _TOTAL_DURATION_TIMESTEPS] )
-            if actor_timesteps.shape[0] < 1 or actor_timesteps.shape[0] != _TOTAL_DURATION_TIMESTEPS:
+            actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
+            if actor_timesteps.shape[0] < _TOTAL_DURATION_TIMESTEPS:
                 continue
             # Get actor trajectory and heading history and instantaneous velocity
-            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] for object_state in track.object_states if object_state.timestep < _TOTAL_DURATION_TIMESTEPS] )
+            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] for object_state in track.object_states])
             # Get source actor trajectory and heading history -> observerd or historical trajectory
             src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
             # Get target actor trajectory and heading history -> forescated or predicted trajectory
