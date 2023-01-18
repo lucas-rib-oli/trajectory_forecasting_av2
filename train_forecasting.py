@@ -66,10 +66,14 @@ class TransformerTrain ():
         print (Fore.CYAN + 'Experiment name: ' + Fore.WHITE + self.experiment_name + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Datos para entrenamiento
-        self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', sequence_length=self.sequence_length)
+        self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', sequence_length=self.sequence_length, 
+                                                       filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
+                                                       load_pickle=True, save_pickle=False)
         self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # Datos para validación 
-        self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', sequence_length=self.sequence_length)
+        self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', sequence_length=self.sequence_length,
+                                                     filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
+                                                     load_pickle=True, save_pickle=False)
         self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
         print (Fore.CYAN + 'Number of training sequences: ' + Fore.WHITE + str(len(self.train_data)) + Fore.RESET)

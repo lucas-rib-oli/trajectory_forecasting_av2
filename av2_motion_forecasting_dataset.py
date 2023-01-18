@@ -26,7 +26,8 @@ _STATIC_OBJECT_TYPES: Set[ObjectType] = {
 # ===================================================================================== #
 class Av2MotionForecastingDataset (Dataset):
     """ PyTorch Dataset """
-    def __init__(self, dataset_dir: str, split: str = "train", sequence_length: int = 8):
+    def __init__(self, dataset_dir: str, split: str = "train", sequence_length: int = 8, 
+                 filename_pickle_src: str = 'src_trajectory_data', filename_pickle_tgt: str = 'tgt_trajectory_data', load_pickle = True, save_pickle=False):
         argoverse_scenario_dir = os.path.join(dataset_dir, 'argoverse2', 'motion_forecasting', split)
         argoverse_scenario_dir = Path(argoverse_scenario_dir)
         all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
@@ -34,8 +35,8 @@ class Av2MotionForecastingDataset (Dataset):
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         # Check if exists processed trajectories 
-        self.path_2_save_src = os.path.join('pickle_data/', str(split + '_src_trajectory_data.pickle'))
-        self.path_2_save_tgt = os.path.join('pickle_data/', str(split + '_tgt_trajectory_data.pickle'))
+        self.path_2_save_src = os.path.join('pickle_data/', str(split + '_' + filename_pickle_src))
+        self.path_2_save_tgt = os.path.join('pickle_data/', str(split + '_' + filename_pickle_tgt))
         if load_pickle:
             with open(self.path_2_save_src, 'rb') as f:
                 self.src_actor_trajectory_by_id = pickle.load(f)

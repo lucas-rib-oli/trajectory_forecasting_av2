@@ -56,6 +56,9 @@ class TransformerPrediction ():
         self.save_path = 'models_weights/'
         self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.sequence_length)
         
+        self.filename_pickle_src = config['filename_pickle_src']
+        self.filename_pickle_tgt = config['filename_pickle_tgt']
+        
         self.model = TransformerModel (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, 
                                        d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward).to(self.device)
 

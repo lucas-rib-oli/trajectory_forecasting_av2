@@ -16,6 +16,8 @@
   "sequence_length": 8,
   "num_workers" : 8,
   "device" : "cuda:0",
-  "experiment_name" : "transHuberLoss_noamOpt_normData_deltaGlobal_xyz_L2_greedy_val",
-  "resume_train" : false
+  "resume_train" : false,
+  "filename_pickle_src" : "src_trajectory_data",
+  "filename_pickle_tgt" : "tgt_trajectory_data"
+
 }
