@@ -81,7 +81,6 @@ class Av2MotionForecastingDataset (Dataset):
         self.src_sequences, self.tgt_sequences = self.__prepare_data()
     # ===================================================================================== #   
     def __save_trajectories (self):
-        print ('saving')
         # Save the trajectories in a pickle
         with open(self.path_2_save_src, 'wb') as f:
             pickle.dump(self.src_actor_trajectory_by_id, f)
