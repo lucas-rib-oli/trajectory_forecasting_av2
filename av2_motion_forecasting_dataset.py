@@ -111,11 +111,16 @@ class Av2MotionForecastingDataset (Dataset):
         
         # Get trajectories
         for track in scenario.tracks:
-            # Only get the vehicles and dont save the ego-vehicle (AV)
-            if track.object_type != ObjectType.VEHICLE or track.track_id == "AV" or track.track_id != scenario.focal_track_id:
+            # Only get the vehicles and dont save the ego-vehicle (AV), and 
+            if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                 continue
+            # Only get the 'FOCAL TACK' and 'SCORED CARS'
+            if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
+                continue
+            
             # Get timesteps for which actor data is valid
             actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
+
             if actor_timesteps.shape[0] < _TOTAL_DURATION_TIMESTEPS:
                 continue
             # Get actor trajectory and heading history and instantaneous velocity
