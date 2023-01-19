@@ -188,7 +188,6 @@ class Av2MotionForecastingDataset (Dataset):
                 if track.track_id in scenario_tgt_actor_trajectory_by_id.keys():
                     del scenario_src_actor_trajectory_by_id[track.track_id]
                     del scenario_tgt_actor_trajectory_by_id[track.track_id]
-        
     # ===================================================================================== #
     def __prepare_data (self) -> list:
         src_sequences = []
