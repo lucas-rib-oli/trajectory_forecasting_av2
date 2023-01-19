@@ -42,9 +42,7 @@ class Av2MotionForecastingDataset (Dataset):
                 self.src_actor_trajectory_by_id = pickle.load(f)
             with open(self.path_2_save_tgt, 'rb') as f:
                 self.tgt_actor_trajectory_by_id = pickle.load(f)
-        else:
-            """
-            idx = 0
+        else:            
             begin = 0
             end = 0
             threads = list()
@@ -72,12 +70,13 @@ class Av2MotionForecastingDataset (Dataset):
             # Join threads
             for index, thread in track(enumerate(threads)):
                 thread.join()
-            """         
-        for scenario_path in track(all_scenario_files):
-            self.__generate_scenario(scenario_path)
-            idx += 1
-            if idx > 5:
-                break
+                 
+            # for scenario_path in track(all_scenario_files):
+            #     self.__generate_scenario(scenario_path)
+
+        # Save the data if is not processed
+        if save_pickle:
+            self.__save_trajectories()
         self.src_sequences, self.tgt_sequences = self.__prepare_data()
     # ===================================================================================== #   
     def __save_trajectories (self):
