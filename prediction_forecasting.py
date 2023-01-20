@@ -132,11 +132,13 @@ class TransformerPrediction ():
             if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                 continue
             # Get timesteps for which actor data is valid
-            actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states if object_state.timestep < _TOTAL_DURATION_TIMESTEPS] )
-            if actor_timesteps.shape[0] < 1 or actor_timesteps.shape[0] != _TOTAL_DURATION_TIMESTEPS:
+            actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
+
+            if actor_timesteps.shape[0] < _TOTAL_DURATION_TIMESTEPS:
                 continue
             # Get actor trajectory and heading history and instantaneous velocity
-            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] for object_state in track.object_states if object_state.timestep < _TOTAL_DURATION_TIMESTEPS] )
+            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] + list(object_state.velocity) for object_state in track.object_states])
+
             # Get source actor trajectory and heading history -> observerd or historical trajectory
             src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
             # Get target actor trajectory and heading history -> forescated or predicted trajectory
@@ -167,6 +169,8 @@ class TransformerPrediction ():
                                    [          0,            0, 1, 0],
                                    [          0,            0, 0, 1]])
 
+            scenario_src_actor_trajectory_by_id_transformed = {}
+            scenario_tgt_actor_trajectory_by_id_transformed = {}
             # Transform all trajectories
             for track_id in scenario_tgt_actor_trajectory_by_id.keys():
                 src_agent_coordinate = scenario_src_actor_trajectory_by_id[track_id][:, 0:2]
@@ -184,9 +188,25 @@ class TransformerPrediction ():
                 # Transformed trajectory
                 src_agent_coordinate_tf = np.dot(rot_matrix, src_agent_coordinate.T).T
                 tgt_agent_coordinate_tf = np.dot(rot_matrix, tgt_agent_coordinate.T).T
+                
+                # Add heading
+                src_agent_coordinate_tf[:,2:4] = scenario_src_actor_trajectory_by_id[track_id][:, 2:4]
+                tgt_agent_coordinate_tf[:,2:4] = scenario_tgt_actor_trajectory_by_id[track_id][:, 2:4]
+                
+                # Add velocity
+                src_agent_coordinate_tf = np.append (src_agent_coordinate_tf, scenario_src_actor_trajectory_by_id[track_id][:, 4:], axis=1)
+                tgt_agent_coordinate_tf = np.append (tgt_agent_coordinate_tf, scenario_tgt_actor_trajectory_by_id[track_id][:, 4:], axis=1)
+                
                 # Save the trajectory
-                self.src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf[:, 0:2]
-                self.tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf[:, 0:2]
+                self.src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf
+                self.tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf
+                
+                scenario_src_actor_trajectory_by_id_transformed[track_id] = src_agent_coordinate_tf
+                scenario_tgt_actor_trajectory_by_id_transformed[track_id] = tgt_agent_coordinate_tf
+                
+            self.src_actor_trajectory_by_scenarios[scenario_id] = scenario_src_actor_trajectory_by_id_transformed
+            self.tgt_actor_trajectory_by_scenarios[scenario_id] = scenario_tgt_actor_trajectory_by_id_transformed
+                
         else:
             # Not found focal agent or target agent
             # Delete scenario

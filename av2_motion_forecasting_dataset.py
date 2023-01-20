@@ -146,7 +146,6 @@ class Av2MotionForecastingDataset (Dataset):
             sin_heading = heading_vector[0]
             cos_heading = heading_vector[1]
             
-            
             src_zeros_vector = np.zeros((src_full_traj.shape[0], 1))
             src_ones_vector = np.ones((src_full_traj.shape[0], 1))
             tgt_zeros_vector = np.zeros((tgt_full_traj.shape[0], 1))
