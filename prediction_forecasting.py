@@ -229,37 +229,38 @@ class TransformerPrediction ():
     def predict(self):
         # Set network in eval mode
         self.model.eval()
-        for track_id in self.src_actor_trajectory_by_id.keys():
-            with torch.no_grad():
-                src = torch.tensor(self.src_actor_trajectory_by_id[track_id], dtype=torch.float32).unsqueeze(0).to(self.device)
-                tgt = torch.tensor(self.tgt_actor_trajectory_by_id[track_id], dtype=torch.float32).unsqueeze(0).to(self.device)                
-                # Get the start of the sequence
-                dec_inp = tgt[:, 0, :]
-                dec_inp = dec_inp.unsqueeze(1)
-                # Generate a square mask for the sequence
-                src_mask = torch.zeros(src.size()[1], src.size()[1]).to(self.device)
-                # ----------------------------------------------------------------------- #
-                # Encode step
-                memory = self.model.encode(src, src_mask).to(self.device)
-                # Apply Greedy Code
-                for _ in range (0, self.sequence_length - 1):
-                    # Get target mask
-                    tgt_mask = (nn.Transformer.generate_square_subsequent_mask(dec_inp.size()[1])).to(self.device)
-                    # Get tokens
-                    out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
-                    # Generate the prediction
-                    prediction = self.model.generate ( out ).to(self.device)
-                    # Concatenate
-                    dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
-                
-                plt.plot (dec_inp[0,:,0].cpu().numpy(), dec_inp[0,:,1].cpu().numpy(), color=(1,0,0), label='prediction')
-                plt.plot (src[0,:,0].cpu().numpy(), src[0,:,1].cpu().numpy(), color=(0,0,1), label='historical')
-                
-                plt.plot (tgt[0,:,0].cpu().numpy(), tgt[0,:,1].cpu().numpy(), color=(0,1,0), label='GT')
-                plt.xlabel('X')
-                plt.ylabel('Y')
-                plt.legend(loc="upper left")
-                plt.show()
+        for scenario_id in self.src_actor_trajectory_by_scenarios.keys():
+            for track_id in self.src_actor_trajectory_by_scenarios[scenario_id].keys():
+                with torch.no_grad():
+                    src = torch.tensor(self.src_actor_trajectory_by_id[track_id], dtype=torch.float32).unsqueeze(0).to(self.device)
+                    tgt = torch.tensor(self.tgt_actor_trajectory_by_id[track_id], dtype=torch.float32).unsqueeze(0).to(self.device)
+                    # Get the start of the sequence
+                    dec_inp = tgt[:, 0, :]
+                    dec_inp = dec_inp.unsqueeze(1)
+                    # Generate a square mask for the sequence
+                    src_mask = torch.zeros(src.size()[1], src.size()[1]).to(self.device)
+                    # ----------------------------------------------------------------------- #
+                    # Encode step
+                    memory = self.model.encode(src, src_mask).to(self.device)
+                    # Apply Greedy Code
+                    for _ in range (0, self.sequence_length - 1):
+                        # Get target mask
+                        tgt_mask = (generate_square_subsequent_mask(dec_inp.size()[1])).to(self.device)
+                        # Get tokens
+                        out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
+                        # Generate the prediction
+                        prediction = self.model.generate ( out ).to(self.device)
+                        # Concatenate
+                        dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
+                    
+                    plt.plot (dec_inp[0,:,0].cpu().numpy(), dec_inp[0,:,1].cpu().numpy(), color=(1,0,0), label='prediction' + str(track_id))
+                    plt.plot (src[0,:,0].cpu().numpy(), src[0,:,1].cpu().numpy(), color=(0,0,1), label='historical' + str(track_id))
+                    
+                    plt.plot (tgt[0,:,0].cpu().numpy(), tgt[0,:,1].cpu().numpy(), color=(0,1,0), label='GT' + str(track_id))
+                    plt.xlabel('X')
+                    plt.ylabel('Y')
+                    # plt.legend(loc="upper left")
+            plt.show()
                 # exit(0)
                 
             
