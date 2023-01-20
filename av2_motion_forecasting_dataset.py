@@ -127,7 +127,7 @@ class Av2MotionForecastingDataset (Dataset):
             if actor_timesteps.shape[0] < _TOTAL_DURATION_TIMESTEPS:
                 continue
             # Get actor trajectory and heading history and instantaneous velocity
-            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] for object_state in track.object_states])
+            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] + list(object_state.velocity) for object_state in track.object_states])
             # Get source actor trajectory and heading history -> observerd or historical trajectory
             src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
             # Get target actor trajectory and heading history -> forescated or predicted trajectory
@@ -146,6 +146,9 @@ class Av2MotionForecastingDataset (Dataset):
             heading_vector = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][-1, 2:4]
             sin_heading = heading_vector[0]
             cos_heading = heading_vector[1]
+            # Get the focal heading
+            focal_heading = np.arctan2(sin_heading,
+                                       cos_heading)
             
             src_zeros_vector = np.zeros((src_full_traj.shape[0], 1))
             src_ones_vector = np.ones((src_full_traj.shape[0], 1))
@@ -162,11 +165,22 @@ class Av2MotionForecastingDataset (Dataset):
                 src_agent_coordinate = scenario_src_actor_trajectory_by_id[track_id][:, 0:2]
                 tgt_agent_coordinate = scenario_tgt_actor_trajectory_by_id[track_id][:, 0:2]
                 
+                src_agent_heading = np.arctan2(scenario_src_actor_trajectory_by_id[track_id][:,2], scenario_src_actor_trajectory_by_id[track_id][:,3])
+                tgt_agent_heading = np.arctan2(scenario_tgt_actor_trajectory_by_id[track_id][:,2], scenario_tgt_actor_trajectory_by_id[track_id][:,3])
+                
+                src_agent_velocity = scenario_src_actor_trajectory_by_id[track_id][:, 4:]
+                tgt_agent_velocity = scenario_tgt_actor_trajectory_by_id[track_id][:, 4:]
+                
                 # Add Z --> 0
                 src_agent_coordinate = np.append (src_agent_coordinate, src_zeros_vector, axis=1)
                 src_agent_coordinate = np.append (src_agent_coordinate, src_ones_vector, axis=1)
                 tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_zeros_vector, axis=1)
                 tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_ones_vector, axis=1)
+                
+                src_agent_velocity = np.append (src_agent_velocity, src_zeros_vector, axis=1)
+                src_agent_velocity = np.append (src_agent_velocity, src_ones_vector, axis=1)
+                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_zeros_vector, axis=1)
+                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_ones_vector, axis=1)
                 # Substract the center
                 src_agent_coordinate = src_agent_coordinate - np.append (focal_coordinate, [0, 0])
                 tgt_agent_coordinate = tgt_agent_coordinate - np.append (focal_coordinate, [0, 0])
@@ -174,15 +188,32 @@ class Av2MotionForecastingDataset (Dataset):
                 # Transformed trajectory
                 src_agent_coordinate_tf = np.dot(rot_matrix, src_agent_coordinate.T).T
                 tgt_agent_coordinate_tf = np.dot(rot_matrix, tgt_agent_coordinate.T).T
-                # plt.plot(src_agent_coordinate_tf[:,0], src_agent_coordinate_tf[:,1], color=(1,0,0), linewidth=1)
-                # plt.plot(tgt_agent_coordinate_tf[:,0], tgt_agent_coordinate_tf[:,1], color=(0,1,0), linewidth=1)
-                # plt.xlabel('X')
-                # plt.ylabel('Y')
-                # plt.show()
+                # Transformed velocitys
+                src_agent_velocity_tf = np.dot(rot_matrix, src_agent_velocity.T).T
+                tgt_agent_velocity_tf = np.dot(rot_matrix, tgt_agent_velocity.T).T
+                src_agent_velocity_tf = src_agent_velocity_tf[:,0:2] # Get only the components
+                tgt_agent_velocity_tf = tgt_agent_velocity_tf[:,0:2]
+                # Transformed heading
+                src_agent_heading_tf = src_agent_heading - focal_heading
+                tgt_agent_heading_tf = tgt_agent_heading - focal_heading
+                # Normalice heading [-pi, pi)
+                src_agent_heading_tf = (src_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
+                tgt_agent_heading_tf = (tgt_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
+                # Vector heading
+                src_agent_vector_heading_tf = np.array([np.sin(src_agent_heading_tf), np.cos(src_agent_heading_tf)])
+                tgt_agent_vector_heading_tf = np.array([np.sin(tgt_agent_heading_tf), np.cos(tgt_agent_heading_tf)])
+                
+                # Add heading
+                src_agent_coordinate_tf[:,2:4] = src_agent_vector_heading_tf.T
+                tgt_agent_coordinate_tf[:,2:4] = tgt_agent_vector_heading_tf.T
+                
+                # Add velocity
+                src_agent_coordinate_tf = np.append (src_agent_coordinate_tf, src_agent_velocity_tf, axis=1)
+                tgt_agent_coordinate_tf = np.append (tgt_agent_coordinate_tf, tgt_agent_velocity_tf, axis=1)
                 
                 # Save the trajectory
-                self.src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf[:, 0:2]
-                self.tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf[:, 0:2]
+                self.src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf
+                self.tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf
         else:
             # Not found focal agent or target agent
             # Delete scenario
