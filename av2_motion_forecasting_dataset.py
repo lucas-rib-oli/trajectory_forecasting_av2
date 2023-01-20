@@ -30,9 +30,6 @@ class Av2MotionForecastingDataset (Dataset):
     """ PyTorch Dataset """
     def __init__(self, dataset_dir: str, split: str = "train", sequence_length: int = 8, 
                  filename_pickle_src: str = 'src_trajectory_data', filename_pickle_tgt: str = 'tgt_trajectory_data', load_pickle = True, save_pickle=False):
-        argoverse_scenario_dir = os.path.join(dataset_dir, 'argoverse2', 'motion_forecasting', split)
-        argoverse_scenario_dir = Path(argoverse_scenario_dir)
-        all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
         
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
@@ -44,7 +41,11 @@ class Av2MotionForecastingDataset (Dataset):
                 self.src_actor_trajectory_by_id = pickle.load(f)
             with open(self.path_2_save_tgt, 'rb') as f:
                 self.tgt_actor_trajectory_by_id = pickle.load(f)
-        else:            
+        else:
+            argoverse_scenario_dir = os.path.join(dataset_dir, 'argoverse2', 'motion_forecasting', split)
+            argoverse_scenario_dir = Path(argoverse_scenario_dir)
+            all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
+            
             begin = 0
             end = 0
             threads = list()
