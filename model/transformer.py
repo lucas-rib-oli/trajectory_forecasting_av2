@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import math
+from typing import Optional, Any, Union, Callable
 
 class TransformerModel (nn.Module):
     """Transformer with a linear embedding
@@ -52,7 +53,8 @@ class TransformerModel (nn.Module):
         trg = self.dec_linear_embedding(trg)
         trg = self.pos_decoder(trg)
         
-        output = self.transformer(src, trg, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask)
+        output = self.transformer(src, trg, src_mask=src_mask, tgt_mask=tgt_mask, src_key_padding_mask=src_padding_mask, 
+                                  tgt_key_padding_mask=tgt_padding_mask, memory_key_padding_mask=src_padding_mask)
         # Get the output i the expected dimensions
         output = self.linear_out(output)
 
