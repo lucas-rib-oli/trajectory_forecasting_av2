@@ -237,7 +237,7 @@ class TransformerTrain ():
                     prediction = self.model.generate ( out ).to(self.device)
                     # Concatenate
                     dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
-                loss = self.loss_fn (dec_inp, tgt)
+                loss = self.loss_fn (dec_inp[:, 1:, :], tgt[:, 1:, :])
                 loss = loss.mean()
                 validation_losses.append(loss.detach().cpu().numpy())            
         # save checkpoint model
