@@ -1,13 +1,13 @@
 {
   "num_layers": 2,
-  "d_model": 128, // the number of expected features in the encoder/decoder inputs
-  "nhead": 8, // the number of heads in the multiheadattention models
-  "num_encoder_layers": 6, // the number of sub-encoder-layers in the encoder
-  "dim_feedforward" : 256, // the dimension of the feedforward network model
-  "enc_inp_size" : 2,
-  "dec_inp_size" : 2,
-  "dec_out_size" : 2,
-  "dropout": 0.1,
+  "d_model": 128,
+  "nhead": 2,
+  "num_encoder_layers": 2,
+  "dim_feedforward" : 256,
+  "enc_inp_size" : 6,
+  "dec_inp_size" : 6,
+  "dec_out_size" : 6,
+  "dropout": 0.4,
   "opt_warmup" : 5,
   "opt_factor" : 0.1,
   "num_epochs": 1000,
