@@ -278,7 +278,8 @@ class TransformerTrain ():
             # check on load to map model to the correct device
             'device': next(iter(self.model.parameters())).get_device(),
             'datetime': datetime.datetime.now(),
-            'lr': self.learning_rate
+            'lr': self.learning_rate,
+            'best_validation_loss': self.best_validation_loss
         }, file_name)
     # ===================================================================================== #
     def load_checkpoint (self, name : str):
@@ -288,14 +289,15 @@ class TransformerTrain ():
             self.model.load_state_dict(torch.load(file_name)['model_state_dict'])
             self.optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.iteration = checkpoint['iteration']
-            self.epoch = checkpoint['epoch']
+            self.start_epoch = checkpoint['epoch']
+            self.learning_rate = checkpoint['lr']
+            self.best_validation_loss = checkpoint['best_validation_loss']
+            
+            for p in self.optimizer.optimizer.param_groups:
+                p['lr'] = self.learning_rate
         else:
             print (Fore.RED + 'Eror to open .pth' + Fore.RESET)
             exit(0)
-# ===================================================================================== #
-def generate_square_subsequent_mask(sz: int) -> torch.Tensor:
-    """Generates an upper-triangular matrix of -inf, with zeros on diag."""
-    return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)    
 # ===================================================================================== #
 def main ():
     with open(args.path_2_configuration, "r") as config_file:
