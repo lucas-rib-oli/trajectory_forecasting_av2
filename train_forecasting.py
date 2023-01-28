@@ -139,13 +139,12 @@ class TransformerTrain ():
         # set network in train mode
         self.model.train()
         # Epochs
-        for self.epoch in range(self.num_epochs):
+        for self.epoch in range(self.start_epoch, self.num_epochs):
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
                 # Get the data from the dataloader
-                src = data['src']
-                tgt = data['tgt']
-                
+                src: torch.Tensor = data['src']
+                tgt: torch.Tensor = data['tgt']
                 
                 src = src.to(self.device) # (bs, sequence length, feature number)
                 # src = src.double()
@@ -210,8 +209,8 @@ class TransformerTrain ():
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():
-                src = data['src']
-                tgt = data['tgt']
+                src: torch.Tensor = data['src']
+                tgt: torch.Tensor = data['tgt']
                 src = src.to(self.device)
                 # src = src.double()
                 tgt = tgt.to(self.device)
