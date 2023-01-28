@@ -91,7 +91,7 @@ class TransformerTrain ():
         # Get the optimizer
         
         self.optimizer = NoamOpt( self.d_model, len(self.train_dataloader) * self.opt_warmup,
-                                  torch.optim.Adam(self.model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9), self.opt_factor )
+                                  torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, betas=(0.9, 0.98), eps=1e-9), self.opt_factor )
         
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.5)
         # Initialize the loss function
