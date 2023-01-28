@@ -20,7 +20,7 @@
   "resume_train" : false,
   "load_pickle" : false,
   "save_pickle" : true,
-  "filename_pickle_src" : "borrar.pickle",
-  "filename_pickle_tgt" : "borrar.pickle"
+  "filename_pickle_src" : "src_traj_data_scored_l50.pickle",
+  "filename_pickle_tgt" : "src_traj_data_scored_l60.pickle"
 
 }
