@@ -1,2 +1,14 @@
 *.mp4
 output_viz/
+__pycache__
+tensorboard
+models_weights/
+sim_dataset.py
+train_sim.py
+models_weights_simulated/
+tensorboard_sim/
+prediction_sim.py
+SIM_config_transformer.json
+pickle_data/
+generate_forecasting_scenario_visualizations.py
+.vscode/
