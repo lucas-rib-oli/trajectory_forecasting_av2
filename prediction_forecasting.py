@@ -69,7 +69,7 @@ class TransformerPrediction ():
         # ---------------------------------------------------------------------------------------------------- #
         self.loss_fn = nn.HuberLoss(reduction='mean')
         # ---------------------------------------------------------------------------------------------------- #
-        argoverse_scenario_dir = os.path.join(args.path_2_dataset, 'argoverse2', 'motion_forecasting', 'train')
+        argoverse_scenario_dir = os.path.join(args.path_2_dataset, 'argoverse2', 'motion_forecasting', 'val')
         argoverse_scenario_dir = Path(argoverse_scenario_dir)
         all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
         all_scenario_files = all_scenario_files[200:300]
