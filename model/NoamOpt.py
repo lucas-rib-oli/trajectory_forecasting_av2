@@ -15,6 +15,7 @@ class NoamOpt(object):
         self.epoch=0
         self.best_mad=np.inf
         self.best_fad=np.inf
+        self.learning_rate = self.optimizer.param_groups[0]['lr']
 
     def state_dict(self):
         """Returns the state of the warmup scheduler as a :class:`dict`.
@@ -35,13 +36,21 @@ class NoamOpt(object):
         """
         Update parameters and rate
         """
+        # self._step += 1
+        # rate = self.rate()
+        # for p in self.optimizer.param_groups:
+        #     p['lr'] = rate
+        # self._rate = rate
+        # self.step_lr_scheduler()
+        self.optimizer.step()
+
+    def step_lr_scheduler (self):
         self._step += 1
-        rate = self.rate()
+        rate = self.tenet_rate()
         for p in self.optimizer.param_groups:
             p['lr'] = rate
         self._rate = rate
-        self.optimizer.step()
-
+    
     def rate(self, step=None):
         """
         Implement 'rate' above
@@ -49,6 +58,14 @@ class NoamOpt(object):
         if step is None:
             step = self._step
         return self.factor * (self.model_size ** -0.5) * min(step ** -0.5, step * self.warmup ** -1.5)
+    def tenet_rate (self, step=None):
+        if step is None:
+            step = self._step
+        if step == 170 or step == 190 or step == 300 or step == 550 or step == 600 or step == 620 or step == 660 or step == 700 or step == 800:
+            self.learning_rate = self.learning_rate * 0.1
+        return self.learning_rate
+            
+        
 
 
 def get_std_opt(model):
