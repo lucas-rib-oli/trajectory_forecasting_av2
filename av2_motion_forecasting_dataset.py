@@ -16,9 +16,9 @@ import threading
 
 # ===================================================================================== #
 # Configure constants
-_OBS_DURATION_TIMESTEPS: Final[int] = 50 # The first 5 s of each scenario is denoted as the observed window
-_PRED_DURATION_TIMESTEPS: Final[int] = 60 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
-_TOTAL_DURATION_TIMESTEPS: Final[int] = 110
+_OBS_DURATION_TIMESTEPS: Final[int] = 8 # The first 5 s of each scenario is denoted as the observed window
+_PRED_DURATION_TIMESTEPS: Final[int] = 12 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
+_TOTAL_DURATION_TIMESTEPS: Final[int] = 20
 _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.STATIC,
     ObjectType.BACKGROUND,
@@ -28,7 +28,7 @@ _STATIC_OBJECT_TYPES: Set[ObjectType] = {
 # ===================================================================================== #
 class Av2MotionForecastingDataset (Dataset):
     """ PyTorch Dataset """
-    def __init__(self, dataset_dir: str, split: str = "train", sequence_length: int = 8, 
+    def __init__(self, dataset_dir: str, split: str = "train", output_traj_size: int = 8, 
                  filename_pickle_src: str = 'src_trajectory_data', filename_pickle_tgt: str = 'tgt_trajectory_data', load_pickle = True, save_pickle=False):
         
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}

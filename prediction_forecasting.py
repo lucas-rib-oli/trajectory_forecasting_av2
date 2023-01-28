@@ -21,9 +21,9 @@ from av2.utils.typing import NDArrayFloat, NDArrayInt
 import numpy.typing as npt
 # ===================================================================================== #
 # Configure constants
-_OBS_DURATION_TIMESTEPS: Final[int] = 50 # The first 5 s of each scenario is denoted as the observed window
-_PRED_DURATION_TIMESTEPS: Final[int] = 60 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
-_TOTAL_DURATION_TIMESTEPS: Final[int] = 110
+_OBS_DURATION_TIMESTEPS: Final[int] = 8 # The first 5 s of each scenario is denoted as the observed window
+_PRED_DURATION_TIMESTEPS: Final[int] = 12 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
+_TOTAL_DURATION_TIMESTEPS: Final[int] = 20
 # ===================================================================================== #
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -51,11 +51,11 @@ class TransformerPrediction ():
         self.learning_rate = config['lr']
         self.current_lr = self.learning_rate
         self.batch_size = 2048
-        self.sequence_length = config['sequence_length']
+        self.output_traj_size = config['output_traj_size']
         self.num_workers = config['num_workers']
         self.dropout = config['dropout']
         self.save_path = 'models_weights/'
-        self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.sequence_length)
+        self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.output_traj_size)
         
         self.filename_pickle_src = config['filename_pickle_src']
         self.filename_pickle_tgt = config['filename_pickle_tgt']
@@ -63,7 +63,7 @@ class TransformerPrediction ():
         self.model = TransformerModel (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, 
                                        d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward).to(self.device)
         # ---------------------------------------------------------------------------------------------------- #
-        # self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', sequence_length=self.sequence_length, 
+        # self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.output_traj_size, 
         #                                              load_pickle=False, save_pickle=False)
         # self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # ---------------------------------------------------------------------------------------------------- #
@@ -286,7 +286,7 @@ class TransformerPrediction ():
                     # Encode step
                     memory = self.model.encode(src, src_mask).to(self.device)
                     # Apply Greedy Code
-                    for _ in range (0, self.sequence_length - 1):
+                    for _ in range (0, self.output_traj_size - 1):
                         # Get target mask
                         tgt_mask = (generate_square_subsequent_mask(dec_inp.size()[1])).to(self.device)
                         # Get tokens
@@ -336,7 +336,7 @@ class TransformerPrediction ():
                 # ----------------------------------------------------------------------- #
             
                 # Apply Greedy Code
-                for _ in range (0, self.sequence_length - 1):
+                for _ in range (0, self.output_traj_size - 1):
                     # Get target mask
                     tgt_mask = (nn.Transformer.generate_square_subsequent_mask(dec_inp.size()[1])).to(self.device)
                     # Get tokens

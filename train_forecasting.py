@@ -51,7 +51,7 @@ class TransformerTrain ():
         self.learning_rate = config['lr']
         self.current_lr = self.learning_rate
         self.batch_size = config['batch_size']
-        self.sequence_length = config['sequence_length']
+        self.output_traj_size = config['output_traj_size']
         self.num_workers = config['num_workers']
         self.opt_warmup = config['opt_warmup']
         self.opt_factor = config['opt_factor']
@@ -62,7 +62,7 @@ class TransformerTrain ():
         self.filename_pickle_tgt = config['filename_pickle_tgt']
         self.load_pickle = config ['load_pickle']
         self.save_pickle = config['save_pickle']
-        self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.sequence_length)
+        self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.output_traj_size)
         # ----------------------------------------------------------------------- #
         print (Fore.CYAN + 'Device: ' + Fore.WHITE + self.device + Fore.RESET)
         print (Fore.CYAN + 'Number of epochs: ' + Fore.WHITE + str(self.num_epochs) + Fore.RESET)
@@ -71,12 +71,12 @@ class TransformerTrain ():
         print (Fore.CYAN + 'Experiment name: ' + Fore.WHITE + self.experiment_name + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Datos para entrenamiento
-        self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', sequence_length=self.sequence_length, 
+        self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', output_traj_size=self.output_traj_size, 
                                                        filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
                                                        load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # Datos para validación 
-        self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', sequence_length=self.sequence_length,
+        self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.output_traj_size,
                                                      filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
                                                      load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
@@ -233,7 +233,7 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
             
                 # Apply Greedy Code
-                for _ in range (0, self.sequence_length - 1):
+                for _ in range (0, self.output_traj_size - 1):
                     # Get target mask
                     tgt_mask = (self.generate_square_subsequent_mask(dec_inp.size()[1])).type(torch.bool).to(self.device)
                     # Get tokens

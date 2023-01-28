@@ -13,14 +13,14 @@
   "num_epochs": 400,
   "lr": 1e-5,
   "batch_size": 2048,
-  "sequence_length": 60,
+  "output_traj_size": 60,
   "num_workers" : 8,
   "device" : "cuda:0",
   "experiment_name" : "lessComplex_GenerateMM",
   "resume_train" : false,
   "load_pickle" : false,
   "save_pickle" : true,
-  "filename_pickle_src" : "src_traj_data_scored_l50.pickle",
-  "filename_pickle_tgt" : "src_traj_data_scored_l60.pickle"
+  "filename_pickle_src" : "src_traj_data_scored_l8.pickle",
+  "filename_pickle_tgt" : "tgt_traj_data_scored_l12.pickle"
 
 }
