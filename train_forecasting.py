@@ -33,6 +33,7 @@ def get_lr(optimizer):
 class TransformerTrain ():
     def __init__(self, config : dict) -> None:
         self.epoch = 0
+        self.start_epoch = 0
         self.iteration = 0
         self.best_epoch = 0
         self.best_iteration = 0
@@ -95,7 +96,8 @@ class TransformerTrain ():
         
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.5)
         # Initialize the loss function
-        self.loss_fn = nn.HuberLoss(reduction='mean')
+        # self.loss_fn = nn.HuberLoss(reduction='mean')
+        self.loss_fn = nn.MSELoss(reduction='mean')
 
         self.last_train_loss = np.Inf
         self.last_validation_loss = np.Inf
@@ -191,7 +193,7 @@ class TransformerTrain ():
             # Compute validation per each epoch
             self.validation()
             # Scheduler step
-            
+            self.optimizer.step_lr_scheduler()
             self.learning_rate = get_lr(self.optimizer.optimizer)
             self.tb_writer.add_scalar('Learning Rate/epoch', self.learning_rate, self.epoch)
        
