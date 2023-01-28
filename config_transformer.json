@@ -10,14 +10,17 @@
   "dropout": 0.4,
   "opt_warmup" : 5,
   "opt_factor" : 0.1,
-  "num_epochs": 1000,
-  "lr": 1e-4,
-  "batch_size": 64,
-  "sequence_length": 8,
+  "num_epochs": 400,
+  "lr": 1e-5,
+  "batch_size": 2048,
+  "sequence_length": 60,
   "num_workers" : 8,
   "device" : "cuda:0",
+  "experiment_name" : "lessComplex_GenerateMM",
   "resume_train" : false,
-  "filename_pickle_src" : "src_trajectory_data",
-  "filename_pickle_tgt" : "tgt_trajectory_data"
+  "load_pickle" : false,
+  "save_pickle" : true,
+  "filename_pickle_src" : "borrar.pickle",
+  "filename_pickle_tgt" : "borrar.pickle"
 
 }

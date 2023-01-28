@@ -57,6 +57,10 @@ class TransformerTrain ():
         self.dropout = config['dropout']
         self.save_path = 'models_weights/'
         self.resume_train = config['resume_train']
+        self.filename_pickle_src = config['filename_pickle_src']
+        self.filename_pickle_tgt = config['filename_pickle_tgt']
+        self.load_pickle = config ['load_pickle']
+        self.save_pickle = config['save_pickle']
         self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.sequence_length)
         # ----------------------------------------------------------------------- #
         print (Fore.CYAN + 'Device: ' + Fore.WHITE + self.device + Fore.RESET)
@@ -68,12 +72,12 @@ class TransformerTrain ():
         # Datos para entrenamiento
         self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', sequence_length=self.sequence_length, 
                                                        filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
-                                                       load_pickle=True, save_pickle=False)
+                                                       load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # Datos para validación 
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', sequence_length=self.sequence_length,
                                                      filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
-                                                     load_pickle=True, save_pickle=False)
+                                                     load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
         print (Fore.CYAN + 'Number of training sequences: ' + Fore.WHITE + str(len(self.train_data)) + Fore.RESET)
