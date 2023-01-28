@@ -37,7 +37,13 @@ class TransformerModel (nn.Module):
         # Create a Transformer module (in the paper ins only the middle box, not include linear output in the decoder)
         self.transformer = nn.Transformer (d_model=d_model, nhead=nhead, num_encoder_layers=N, num_decoder_layers=N, dim_feedforward=dim_feedforward, dropout=dropout, batch_first=True)
         
-        self.linear_out = nn.Linear(d_model, dec_out_size)
+        # self.linear_out = nn.Linear(d_model, dec_out_size)
+        d_model_2 = int (d_model / 2)
+        self.linear_out = nn.Sequential( nn.Linear(d_model, d_model, bias=True), 
+                                         nn.LayerNorm(d_model), 
+                                         nn.ReLU(), 
+                                         nn.Linear(d_model, d_model_2, bias=True), 
+                                         nn.Linear(d_model_2, dec_out_size, bias=True) )
         
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
