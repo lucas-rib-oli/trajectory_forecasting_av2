@@ -13,6 +13,7 @@
   "num_epochs": 400,
   "lr": 1e-5,
   "batch_size": 2048,
+  "input_traj_size": 8,
   "output_traj_size": 12,
   "num_workers" : 8,
   "device" : "cuda:0",

@@ -51,6 +51,7 @@ class TransformerTrain ():
         self.learning_rate = config['lr']
         self.current_lr = self.learning_rate
         self.batch_size = config['batch_size']
+        self.input_traj_size = config['input_traj_size']
         self.output_traj_size = config['output_traj_size']
         self.num_workers = config['num_workers']
         self.opt_warmup = config['opt_warmup']
