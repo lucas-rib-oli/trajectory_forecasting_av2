@@ -52,14 +52,14 @@ class TransformerModel (nn.Module):
             if param.dim() > 1:
                 nn.init.xavier_uniform_(param)
         
-    def forward(self, src, trg, src_mask, tgt_mask, src_padding_mask: Optional[torch.Tensor] = None, tgt_padding_mask: Optional[torch.Tensor] = None):
+    def forward(self, src, tgt, src_mask, tgt_mask, src_padding_mask: Optional[torch.Tensor] = None, tgt_padding_mask: Optional[torch.Tensor] = None):
         # Apply linear embedding with the positional encoding
         src = self.enc_linear_embedding(src)
         src = self.pos_encoder(src)
-        trg = self.dec_linear_embedding(trg)
-        trg = self.pos_decoder(trg)
+        tgt = self.dec_linear_embedding(tgt)
+        tgt = self.pos_decoder(tgt)
         
-        output = self.transformer(src, trg, src_mask=src_mask, tgt_mask=tgt_mask, src_key_padding_mask=src_padding_mask, 
+        output = self.transformer(src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_key_padding_mask=src_padding_mask, 
                                   tgt_key_padding_mask=tgt_padding_mask, memory_key_padding_mask=src_padding_mask)
         # Get the output i the expected dimensions
         output = self.linear_out(output)
