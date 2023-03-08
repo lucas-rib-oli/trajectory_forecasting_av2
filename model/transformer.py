@@ -608,14 +608,9 @@ class TransformerDecoderLayer(nn.Module):
         # Make position embeddings
         q = k = v = self.with_pos_embed(query, query_pos_embed)
         if self.norm_first:
-            query = q + self._sa_block(self.norm1(q), self.norm1(k), self.norm1(v), tgt_mask, tgt_key_padding_mask)
-            
-            query = self.with_pos_embed(query, query_pos_embed)
-            key = self.with_pos_embed(key, key_pos_embed)
-            value = self.with_pos_embed(value, value_pos_embed)
-            
-            query = query + self._mha_block(self.norm2(query), self.norm2(key), self.norm2(value), memory_mask, memory_key_padding_mask)
-            query = query + self._ff_block(self.norm3(query))
+            x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask)
+            x = x + self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask)
+            x = x + self._ff_block(self.norm3(x))
         else:
             query = self.norm1(q + self._sa_block(q, k, v, tgt_mask, tgt_key_padding_mask))
             
