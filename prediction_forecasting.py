@@ -6,7 +6,7 @@ from pathlib import Path
 from av2.datasets.motion_forecasting import scenario_serialization, data_schema
 from av2.datasets.motion_forecasting.data_schema import ArgoverseScenario, ObjectType
 from av2_motion_forecasting_dataset import Av2MotionForecastingDataset
-from model.transformer import TransformerModel, generate_square_subsequent_mask
+from model.transtraj import TransTraj, generate_square_subsequent_mask
 from typing import Final, Dict, List
 from collections import defaultdict
 from colorama import Fore
@@ -51,6 +51,7 @@ class TransformerPrediction ():
         self.learning_rate = config['lr']
         self.current_lr = self.learning_rate
         self.batch_size = 2048
+        self.input_traj_size = config['input_traj_size']
         self.output_traj_size = config['output_traj_size']
         self.num_workers = config['num_workers']
         self.dropout = config['dropout']
@@ -60,7 +61,7 @@ class TransformerPrediction ():
         self.filename_pickle_src = config['filename_pickle_src']
         self.filename_pickle_tgt = config['filename_pickle_tgt']
         
-        self.model = TransformerModel (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, 
+        self.model = TransTraj (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, out_traj_size=self.output_traj_size,
                                        d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward).to(self.device)
         # ---------------------------------------------------------------------------------------------------- #
         # self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.output_traj_size, 
@@ -269,6 +270,24 @@ class TransformerPrediction ():
             print (Fore.RED + 'Eror to open .pth' + Fore.RESET)
             sys.exit(0)
     # ---------------------------------------------------------------------------------------------------- #
+    def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
+        """Generates an upper-triangular matrix of -inf, with zeros on diag."""
+        mask = (torch.triu(torch.ones((sz, sz), device=self.device)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+    def create_mask(self, src: torch.Tensor, tgt: torch.Tensor):
+        src_seq_len = src.shape[1]
+        tgt_seq_len = tgt.shape[1]
+        batch_size = src.shape[0]
+        
+        tgt_mask = self.generate_square_subsequent_mask(tgt_seq_len)
+        src_mask = torch.zeros((src_seq_len, src_seq_len),device=self.device).type(torch.bool)
+
+        src_padding_mask = torch.zeros((batch_size, src_seq_len),device=self.device).type(torch.bool)
+        tgt_padding_mask = torch.zeros((batch_size, tgt_seq_len),device=self.device).type(torch.bool)
+        
+        return src_mask, tgt_mask, src_padding_mask, tgt_padding_mask
+    # ---------------------------------------------------------------------------------------------------- #
     def predict(self):
         # Set network in eval mode
         self.model.eval()
@@ -277,29 +296,23 @@ class TransformerPrediction ():
                 with torch.no_grad():
                     src = torch.tensor(self.src_actor_trajectory_by_id[track_id], dtype=torch.float32).unsqueeze(0).to(self.device)
                     tgt = torch.tensor(self.tgt_actor_trajectory_by_id[track_id], dtype=torch.float32).unsqueeze(0).to(self.device)
-                    # Get the start of the sequence
-                    dec_inp = tgt[:, 0, :]
-                    dec_inp = dec_inp.unsqueeze(1)
+                    src = src.to(self.device) # (bs, sequence length, feature number)
+                    tgt = tgt.to(self.device)
+                    
                     # Generate a square mask for the sequence
-                    src_mask = torch.zeros(src.size()[1], src.size()[1]).to(self.device)
-                    # ----------------------------------------------------------------------- #
-                    # Encode step
-                    memory = self.model.encode(src, src_mask).to(self.device)
-                    # Apply Greedy Code
-                    for _ in range (0, self.output_traj_size - 1):
-                        # Get target mask
-                        tgt_mask = (generate_square_subsequent_mask(dec_inp.size()[1])).to(self.device)
-                        # Get tokens
-                        out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
-                        # Generate the prediction
-                        prediction = self.model.generate ( out ).to(self.device)
-                        # Concatenate
-                        dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
+                    src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(src, tgt)
+                    # Output model
+                                    # x-7 ... x0 | x1 ... x7
+                    pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask)
                     
-                    plt.plot (dec_inp[0,:,0].cpu().numpy(), dec_inp[0,:,1].cpu().numpy(), color=(1,0,0), label='prediction' + str(track_id))
-                    plt.plot (src[0,:,0].cpu().numpy(), src[0,:,1].cpu().numpy(), color=(0,0,1), label='historical' + str(track_id))
+                    # Output model
+                                    # x-7 ... x0 | x1 ... x7
+                    pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask)
                     
-                    plt.plot (tgt[0,:,0].cpu().numpy(), tgt[0,:,1].cpu().numpy(), color=(0,1,0), label='GT' + str(track_id))
+                    plt.plot (pred[0,:,0].cpu().numpy(), pred[0,:,1].cpu().numpy(), '--o', color=(1,0,0), label='prediction' + str(track_id))
+                    plt.plot (src[0,:,0].cpu().numpy(), src[0,:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical' + str(track_id))
+                    
+                    plt.plot (tgt[0,:,0].cpu().numpy(), tgt[0,:,1].cpu().numpy(), '--o', color=(0,1,0), label='GT' + str(track_id))
                     plt.xlabel('X')
                     plt.ylabel('Y')
                     # plt.legend(loc="upper left")

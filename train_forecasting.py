@@ -11,7 +11,7 @@ import numpy as np
 import os
 import datetime
 from torch.utils.tensorboard import SummaryWriter
-from model.transformer import TransformerModel
+from model.transtraj import TransTraj
 from model.NoamOpt import NoamOpt
 from pathlib import Path
 # ===================================================================================== #
@@ -86,7 +86,7 @@ class TransformerTrain ():
         print (Fore.CYAN + 'Number of validation sequences: ' + Fore.WHITE + str(len(self.val_data)) + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Get the model
-        self.model = TransformerModel (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, 
+        self.model = TransTraj (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, out_traj_size=self.output_traj_size, 
                                        d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # Cast to double
         # self.model = self.model.double()
@@ -211,39 +211,27 @@ class TransformerTrain ():
         validation_losses = []
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
-            with torch.no_grad():
+            with torch.no_grad():                
                 src: torch.Tensor = data['src']
                 tgt: torch.Tensor = data['tgt']
-                src = src.to(self.device)
+                
+                src = src.to(self.device) # (bs, sequence length, feature number)
                 # src = src.double()
                 tgt = tgt.to(self.device)
                 # tgt = tgt.double()
                 
-                # Generate a square mask for the sequence
-                src_mask = torch.zeros(src.size()[1], src.size()[1]).to(self.device)
+                # 0, 0, 0 indicate the start of the sequence
+                # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
+                # dec_input = torch.cat((start_tensor, tgt), 1).to(self.device)
+                # dec_input = tgt
                 
-                # Get the start of the sequence
-                # dec_inp = torch.zeros()
-                # dec_inp = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device).double()
-                dec_inp = tgt[:, 0, :]
-                # Implement one dimension for the tranformer to be able to deal with the input decoder
-                dec_inp = dec_inp.unsqueeze(1).to(self.device)
-                # ----------------------------------------------------------------------- #
-                # Encode step
-                memory = self.model.encode(src, src_mask).to(self.device)
-                # ----------------------------------------------------------------------- #
-            
-                # Apply Greedy Code
-                for _ in range (0, self.output_traj_size - 1):
-                    # Get target mask
-                    tgt_mask = (self.generate_square_subsequent_mask(dec_inp.size()[1])).type(torch.bool).to(self.device)
-                    # Get tokens
-                    out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
-                    # Generate the prediction
-                    prediction = self.model.generate ( out ).to(self.device)
-                    # Concatenate
-                    dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
-                loss = self.loss_fn (dec_inp[:, 1:, :], tgt[:, 1:, :])
+                # Generate a square mask for the sequence
+                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(src, tgt)
+                   
+                # Output model
+                                   # x-7 ... x0 | x1 ... x7
+                pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask) # return -> x1 ... x7
+                loss = self.loss_fn(pred, tgt)                
                 loss = loss.mean()
                 validation_losses.append(loss.detach().cpu().numpy())            
         # save checkpoint model
