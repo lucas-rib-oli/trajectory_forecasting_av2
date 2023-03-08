@@ -477,14 +477,13 @@ class TransformerEncoderLayer(nn.Module):
             x = self.norm2(x + self._ff_block(x))
 
         return x
-    
+
     # self-attention block
-    def _sa_block(self, x: Tensor,
-                  attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
+    def _sa_block(self, x: Tensor, attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
         x = self.self_attn(x, x, x,
-                           attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask,
-                           need_weights=False)[0]
+                            attn_mask=attn_mask,
+                            key_padding_mask=key_padding_mask,
+                            need_weights=False)[0]
         return self.dropout1(x)
 
     # feed forward block
