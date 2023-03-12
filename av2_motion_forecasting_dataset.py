@@ -29,14 +29,14 @@ _STATIC_OBJECT_TYPES: Set[ObjectType] = {
 class Av2MotionForecastingDataset (Dataset):
     """ PyTorch Dataset """
     def __init__(self, dataset_dir: str, split: str = "train", output_traj_size: int = 8, 
-                 filename_pickle_src: str = 'src_trajectory_data', filename_pickle_tgt: str = 'tgt_trajectory_data', load_pickle = True, save_pickle=False):
+                 name_pickle: str = 'scored', load_pickle = True, save_pickle=False):
         
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         # Check if exists processed trajectories 
-        self.path_2_save_src = os.path.join('pickle_data/', str(split + '_' + filename_pickle_src))
-        self.path_2_save_tgt = os.path.join('pickle_data/', str(split + '_' + filename_pickle_tgt))
-        if load_pickle:
+        self.path_2_save_src = os.path.join('pickle_data/', split + '_src_trajectory_data_' + name_pickle + '_' + str(_OBS_DURATION_TIMESTEPS) + '.pickle')
+        self.path_2_save_tgt = os.path.join('pickle_data/', split + '_tgt_trajectory_data_' + name_pickle + '_' + str(_PRED_DURATION_TIMESTEPS) + '.pickle')
+        if load_pickle and os.path.exists(self.path_2_save_src):
             with open(self.path_2_save_src, 'rb') as f:
                 self.src_actor_trajectory_by_id = pickle.load(f)
             with open(self.path_2_save_tgt, 'rb') as f:

@@ -14,12 +14,10 @@ optimizer = dict(
     opt_factor = 0.1
 )
 
-data = dict(
-    
+data = dict(  
     load_pickle = True,
     save_pickle = False,
-    filename_pickle_src = "src_traj_data_scored_l8.pickle",
-    filename_pickle_tgt = "tgt_traj_data_scored_l12.pickle"
+    name_pickle = "target",
 )
 
 model = dict(

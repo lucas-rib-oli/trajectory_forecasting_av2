@@ -67,8 +67,7 @@ class TransformerTrain ():
         
         config_data = cfg.get('data')
         self.save_path = 'models_weights/'
-        self.filename_pickle_src = config_data['filename_pickle_src']
-        self.filename_pickle_tgt = config_data['filename_pickle_tgt']
+        self.name_pickle = config_data['name_pickle']
         self.load_pickle = config_data ['load_pickle']
         self.save_pickle = config_data['save_pickle']
         
@@ -82,12 +81,12 @@ class TransformerTrain ():
         # ----------------------------------------------------------------------- #
         # Datos para entrenamiento
         self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', output_traj_size=self.future_size, 
-                                                       filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
+                                                       name_pickle=self.name_pickle, 
                                                        load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # Datos para validación 
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
-                                                     filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
+                                                     name_pickle=self.name_pickle,
                                                      load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
