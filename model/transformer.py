@@ -172,19 +172,17 @@ class TransformerDecoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, query: Tensor, key: Tensor, value: Tensor, query_pos: Tensor, key_pos: Tensor, value_pos: Tensor,
+    def forward(self, tgt: Tensor, memory: Tensor,
+                query_embeded: Optional[Tensor] = None,
                 tgt_mask: Optional[Tensor] = None,
                 memory_mask: Optional[Tensor] = None, tgt_key_padding_mask: Optional[Tensor] = None,
                 memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
         r"""Pass the inputs (and mask) through the decoder layer in turn.
 
         Args:
-            query: query or sequence to the decoder (required).
-            key: the key from the last layer of the encoder (required).
-            value: the value from the last layer of the encoder (required).
-            query_pos: embedding for the query from encoder.
-            key_pos: embedding for the key from encoder.
-            value_pos: embedding for the value from encoder.
+            tgt: the sequence to the decoder (required).
+            memory: the sequence from the last layer of the encoder (required).
+            query_embeded: Embeding for query (optional).
             tgt_mask: the mask for the tgt sequence (optional).
             memory_mask: the mask for the memory sequence (optional).
             tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
@@ -193,10 +191,10 @@ class TransformerDecoder(nn.Module):
         Shape:
             see the docs in Transformer class.
         """
-        output = query
+        output = tgt
 
         for mod in self.layers:
-            output = mod(output, key, value,
+            output = mod(output, memory, query_embeded=query_embeded, 
                          tgt_mask=tgt_mask,
                          memory_mask=memory_mask,
                          tgt_key_padding_mask=tgt_key_padding_mask,
@@ -278,7 +276,6 @@ class MaskedTransformerEncoder(TransformerEncoder):
 
 
 class TransformerEncoderLayer(nn.Module):
-
     r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
     This standard encoder layer is based on the paper "Attention Is All You Need".
     Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
@@ -531,14 +528,10 @@ class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048, dropout: float = 0.1,
                  activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
-                 self_posembed: Optional[Callable[[Tensor], Tensor]] = None, cross_posembed: Optional[Callable[[Tensor], Tensor]] = None, cross_only: Optional[bool] = False,
                  layer_norm_eps: float = 1e-5, batch_first: bool = False, norm_first: bool = False,
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super(TransformerDecoderLayer, self).__init__()
-        
-        self.cross_only = cross_only
-        
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first,
                                             **factory_kwargs)
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first,
@@ -561,30 +554,25 @@ class TransformerDecoderLayer(nn.Module):
             self.activation = _get_activation_fn(activation)
         else:
             self.activation = activation
-            
-        self.self_posembed = self_posembed
-        self.cross_posembed = cross_posembed 
-        
+    
     def __setstate__(self, state):
         if 'activation' not in state:
             state['activation'] = F.relu
         super(TransformerDecoderLayer, self).__setstate__(state)
 
-    def with_pos_embed(self, tensor, pos_embed):
-        return tensor if pos_embed is None else tensor + pos_embed
+    def with_pos_embed(self, tensor, pos=None):
+        return tensor if pos is None else tensor + pos
     
-    def forward(self, query: Tensor, key: Tensor, value: Tensor, query_pos: Tensor, key_pos: Tensor, value_pos: Tensor,
+    def forward(self, tgt: Tensor, memory: Tensor, 
+                query_embeded: Optional[Tensor] = None,
                 tgt_mask: Optional[Tensor] = None, memory_mask: Optional[Tensor] = None,
                 tgt_key_padding_mask: Optional[Tensor] = None, memory_key_padding_mask: Optional[Tensor] = None) -> Tensor:
         r"""Pass the inputs (and mask) through the decoder layer.
 
         Args:
-            query: the query to the decoder layer (required).
-            key: the key from the last layer of the encoder (required).
-            value: the value from the last layer of the encoder (required).
-            query_pos: embedding for the query from encoder.
-            key_pos: embedding for the key from encoder.
-            value_pos: embedding for the value from encoder.
+            tgt: the sequence to the decoder layer (required).
+            memory: the sequence from the last layer of the encoder (required).
+            query_embeded: Embeding for query (optional).
             tgt_mask: the mask for the tgt sequence (optional).
             memory_mask: the mask for the memory sequence (optional).
             tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
@@ -592,36 +580,23 @@ class TransformerDecoderLayer(nn.Module):
 
         Shape:
             see the docs in Transformer class.
-        """        
+        """
         # see Fig. 1 of https://arxiv.org/pdf/2002.04745v1.pdf
 
-        if self.self_posembed is not None:
-            query_pos_embed = self.self_posembed(query_pos)
-        else:
-            query_pos_embed = None
-        if self.cross_posembed is not None:
-            key_pos_embed = self.cross_posembed(key_pos)
-            value_pos_embed = self.cross_posembed(value_pos)
-        else:
-            key_pos_embed = None
+        x = tgt
+        # Make query position embeddings
+        query = self.with_pos_embed(tgt, query_embeded)
+        key = value = memory
         
-        # Make position embeddings
-        q = k = v = self.with_pos_embed(query, query_pos_embed)
         if self.norm_first:
-            x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask)
-            x = x + self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask)
+            x = query + self._mha_block(self.norm2(query), key, value, memory_mask, memory_key_padding_mask)
             x = x + self._ff_block(self.norm3(x))
         else:
-            query = self.norm1(q + self._sa_block(q, k, v, tgt_mask, tgt_key_padding_mask))
+            x = self.norm2(query + self._mha_block(query, key, value, memory_mask, memory_key_padding_mask))
+            x = self.norm3(x + self._ff_block(x))
             
-            query = self.with_pos_embed(query, query_pos_embed)
-            key = self.with_pos_embed(key, key_pos_embed)
-            value = self.with_pos_embed(value, value_pos_embed)
-            
-            query = self.norm2(query + self._mha_block(query, key, value, memory_mask, memory_key_padding_mask))
-            query = self.norm3(query + self._ff_block(query))
+        return x
 
-        return query
 
     # self-attention block
     def _sa_block(self, query: Tensor, key: Tensor, value: Tensor,
