@@ -19,6 +19,7 @@ import threading
 from rich.progress import track
 from av2.utils.typing import NDArrayFloat, NDArrayInt
 import numpy.typing as npt
+from configs import Config
 # ===================================================================================== #
 # Configure constants
 _OBS_DURATION_TIMESTEPS: Final[int] = 8 # The first 5 s of each scenario is denoted as the observed window
@@ -32,37 +33,43 @@ def str_to_bool(value):
         return True
 parser = argparse.ArgumentParser()
 parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
-parser.add_argument('--path_2_configuration', type=str, default='config_transformer.json', help='Path to the configuration')
+parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 args = parser.parse_args()
 
 class TransformerPrediction ():
-    def __init__(self, config : dict, num_scenarios: int = 100) -> None:
+    def __init__(self, cfg, num_scenarios: int = 100) -> None:
 
-        self.d_model = config['d_model']
-        self.nhead = config['nhead']
-        self.num_encoder_layers = config['num_encoder_layers']
-        self.dim_feedforward = config['dim_feedforward']
-        self.enc_inp_size = config['enc_inp_size']
-        self.dec_inp_size = config['dec_inp_size']
-        self.dec_out_size = config['dec_out_size']
+        model_config = cfg.get('model')
+        self.d_model = model_config['d_model']
+        self.nhead = model_config['nhead']
+        self.num_encoder_layers = model_config['N']
+        self.dropout = model_config['dropout']
+        self.dim_feedforward = model_config['dim_feedforward']
+        self.num_queries = model_config['num_queries']
+        self.pose_dim = model_config['pose_dim']
+        self.dec_out_size = model_config['dec_out_size']
+        self.history_size = model_config['history_size']
+        self.future_size = model_config['future_size']
         
-        self.device = config['device']
-        self.num_epochs = config['num_epochs']
-        self.learning_rate = config['lr']
-        self.current_lr = self.learning_rate
-        self.batch_size = 2048
-        self.input_traj_size = config['input_traj_size']
-        self.output_traj_size = config['output_traj_size']
-        self.num_workers = config['num_workers']
-        self.dropout = config['dropout']
+        train_config = cfg.get('train')
+        self.device = train_config['device']
+        self.num_epochs = train_config['num_epochs']
+        self.batch_size = train_config['batch_size']
+        self.num_workers = train_config['num_workers']
+        self.resume_train = train_config['resume_train']
+        
+        config_data = cfg.get('data')
         self.save_path = 'models_weights/'
-        self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.output_traj_size)
+        self.filename_pickle_src = config_data['filename_pickle_src']
+        self.filename_pickle_tgt = config_data['filename_pickle_tgt']
+        self.load_pickle = config_data ['load_pickle']
+        self.save_pickle = config_data['save_pickle']
+                
+        self.save_path = 'models_weights/'
+        self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         
-        self.filename_pickle_src = config['filename_pickle_src']
-        self.filename_pickle_tgt = config['filename_pickle_tgt']
-        
-        self.model = TransTraj (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, out_traj_size=self.output_traj_size,
-                                       d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward).to(self.device)
+        self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+                                d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # ---------------------------------------------------------------------------------------------------- #
         # self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.output_traj_size, 
         #                                              load_pickle=False, save_pickle=False)
@@ -73,7 +80,7 @@ class TransformerPrediction ():
         argoverse_scenario_dir = os.path.join(args.path_2_dataset, 'argoverse2', 'motion_forecasting', 'val')
         argoverse_scenario_dir = Path(argoverse_scenario_dir)
         all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
-        all_scenario_files = all_scenario_files[200:300]
+        all_scenario_files = all_scenario_files[500:600]
         
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
@@ -303,13 +310,11 @@ class TransformerPrediction ():
                     src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(src, tgt)
                     # Output model
                                     # x-7 ... x0 | x1 ... x7
-                    pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask)
+                    pred, conf = self.model (src, tgt, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None)
                     
-                    # Output model
-                                    # x-7 ... x0 | x1 ... x7
-                    pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask)
-                    
-                    plt.plot (pred[0,:,0].cpu().numpy(), pred[0,:,1].cpu().numpy(), '--o', color=(1,0,0), label='prediction' + str(track_id))
+                    for k in range(self.num_queries):
+                        color = np.random.rand(1,3)
+                        plt.plot (pred[0,:,k,0].cpu().numpy(), pred[0,:,k,1].cpu().numpy(), '--o', color=color, label='prediction' + str(track_id))
                     plt.plot (src[0,:,0].cpu().numpy(), src[0,:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical' + str(track_id))
                     
                     plt.plot (tgt[0,:,0].cpu().numpy(), tgt[0,:,1].cpu().numpy(), '--o', color=(0,1,0), label='GT' + str(track_id))
@@ -368,11 +373,10 @@ class TransformerPrediction ():
             
 # ===================================================================================== #
 def main ():
-    with open(args.path_2_configuration, "r") as config_file:
-        config = json.load(config_file)
+    cfg = Config.fromfile(args.path_2_configuration)
     
     # Model in prediction mode
-    model_predict = TransformerPrediction (config)
+    model_predict = TransformerPrediction (cfg)
     # Train the model
     model_predict.predict()
     # model_predict.visualization_prediction()
