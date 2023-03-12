@@ -14,6 +14,8 @@ from torch.utils.tensorboard import SummaryWriter
 from model.transtraj import TransTraj
 from model.NoamOpt import NoamOpt
 from pathlib import Path
+from configs import Config
+from loss import TransLoss
 # ===================================================================================== #
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -22,48 +24,55 @@ def str_to_bool(value):
         return True
 parser = argparse.ArgumentParser()
 parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
-parser.add_argument('--path_2_configuration', type=str, default='config_transformer.json', help='Path to the configuration')
+parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 args = parser.parse_args()
 # ===================================================================================== #
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr'] 
 
-
+# ===================================================================================== #
 class TransformerTrain ():
-    def __init__(self, config : dict) -> None:
+    def __init__(self, cfg) -> None:
         self.epoch = 0
         self.start_epoch = 0
         self.iteration = 0
         self.best_epoch = 0
         self.best_iteration = 0
-
-        self.d_model = config['d_model']
-        self.nhead = config['nhead']
-        self.num_encoder_layers = config['num_encoder_layers']
-        self.dim_feedforward = config['dim_feedforward']
-        self.enc_inp_size = config['enc_inp_size']
-        self.dec_inp_size = config['dec_inp_size']
-        self.dec_out_size = config['dec_out_size']
         
-        self.device = config['device']
-        self.num_epochs = config['num_epochs']
-        self.learning_rate = config['lr']
+        model_config = cfg.get('model')
+        self.d_model = model_config['d_model']
+        self.nhead = model_config['nhead']
+        self.num_encoder_layers = model_config['N']
+        self.dropout = model_config['dropout']
+        self.dim_feedforward = model_config['dim_feedforward']
+        self.num_queries = model_config['num_queries']
+        self.pose_dim = model_config['pose_dim']
+        self.dec_out_size = model_config['dec_out_size']
+        self.history_size = model_config['history_size']
+        self.future_size = model_config['future_size']
+        
+        train_config = cfg.get('train')
+        self.device = train_config['device']
+        self.num_epochs = train_config['num_epochs']
+        self.batch_size = train_config['batch_size']
+        self.num_workers = train_config['num_workers']
+        self.resume_train = train_config['resume_train']
+        
+        opt_config =cfg.get('optimizer')
+        self.learning_rate = opt_config['lr']
         self.current_lr = self.learning_rate
-        self.batch_size = config['batch_size']
-        self.input_traj_size = config['input_traj_size']
-        self.output_traj_size = config['output_traj_size']
-        self.num_workers = config['num_workers']
-        self.opt_warmup = config['opt_warmup']
-        self.opt_factor = config['opt_factor']
-        self.dropout = config['dropout']
+        self.opt_warmup = opt_config['opt_warmup']
+        self.opt_factor = opt_config['opt_factor']
+        
+        config_data = cfg.get('data')
         self.save_path = 'models_weights/'
-        self.resume_train = config['resume_train']
-        self.filename_pickle_src = config['filename_pickle_src']
-        self.filename_pickle_tgt = config['filename_pickle_tgt']
-        self.load_pickle = config ['load_pickle']
-        self.save_pickle = config['save_pickle']
-        self.experiment_name = config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.output_traj_size)
+        self.filename_pickle_src = config_data['filename_pickle_src']
+        self.filename_pickle_tgt = config_data['filename_pickle_tgt']
+        self.load_pickle = config_data ['load_pickle']
+        self.save_pickle = config_data['save_pickle']
+        
+        self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ----------------------------------------------------------------------- #
         print (Fore.CYAN + 'Device: ' + Fore.WHITE + self.device + Fore.RESET)
         print (Fore.CYAN + 'Number of epochs: ' + Fore.WHITE + str(self.num_epochs) + Fore.RESET)
@@ -72,12 +81,12 @@ class TransformerTrain ():
         print (Fore.CYAN + 'Experiment name: ' + Fore.WHITE + self.experiment_name + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Datos para entrenamiento
-        self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', output_traj_size=self.output_traj_size, 
+        self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', output_traj_size=self.future_size, 
                                                        filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
                                                        load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # Datos para validación 
-        self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.output_traj_size,
+        self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
                                                      filename_pickle_src=self.filename_pickle_src, filename_pickle_tgt=self.filename_pickle_tgt, 
                                                      load_pickle=self.load_pickle, save_pickle=self.save_pickle)
         self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
@@ -86,8 +95,8 @@ class TransformerTrain ():
         print (Fore.CYAN + 'Number of validation sequences: ' + Fore.WHITE + str(len(self.val_data)) + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Get the model
-        self.model = TransTraj (enc_inp_size=self.enc_inp_size, dec_inp_size=self.dec_inp_size, dec_out_size=self.dec_out_size, out_traj_size=self.output_traj_size, 
-                                       d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
+        self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+                                d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # Cast to double
         # self.model = self.model.double()
         # Get the optimizer
@@ -98,7 +107,7 @@ class TransformerTrain ():
         # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.5)
         # Initialize the loss function
         # self.loss_fn = nn.HuberLoss(reduction='mean')
-        self.loss_fn = nn.MSELoss(reduction='mean')
+        self.loss_fn = TransLoss()
 
         self.last_train_loss = np.Inf
         self.last_validation_loss = np.Inf
@@ -164,8 +173,8 @@ class TransformerTrain ():
                    
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask) # return -> x1 ... x7
-                loss = self.loss_fn(pred, tgt)
+                pred, conf = self.model (src, tgt, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                loss = self.loss_fn(pred, conf, tgt)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
@@ -230,9 +239,8 @@ class TransformerTrain ():
                    
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred = self.model (src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask) # return -> x1 ... x7
-                loss = self.loss_fn(pred, tgt)                
-                loss = loss.mean()
+                pred, conf = self.model (src, tgt, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                loss = self.loss_fn(pred, conf, tgt)
                 validation_losses.append(loss.detach().cpu().numpy())            
         # save checkpoint model
         self.save_model('check')
@@ -274,6 +282,11 @@ class TransformerTrain ():
         }, file_name)
     # ===================================================================================== #
     def load_checkpoint (self, name : str):
+        """Load checkpoint from file
+
+        Args:
+            name (str): best/check
+        """
         file_name = os.path.join(self.save_path, f'{self.experiment_name}_{name}.pth')
         if os.path.exists(file_name):
             checkpoint = torch.load(file_name)
@@ -291,11 +304,12 @@ class TransformerTrain ():
             exit(0)
 # ===================================================================================== #
 def main ():
-    with open(args.path_2_configuration, "r") as config_file:
-        config = json.load(config_file)
+    
+    # Read the config
+    cfg = Config.fromfile(args.path_2_configuration)
     
     # Model in train mode
-    model_train = TransformerTrain (config)
+    model_train = TransformerTrain (cfg)
     # Train the model
     model_train.train()
 
