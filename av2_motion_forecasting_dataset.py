@@ -33,14 +33,18 @@ class Av2MotionForecastingDataset (Dataset):
         
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
+        self.src_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
+        self.tgt_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
+        # ----------------------------------------------------------------------- #
         # Check if exists processed trajectories 
-        self.path_2_save_src = os.path.join('pickle_data/', split + '_src_trajectory_data_' + name_pickle + '_' + str(_OBS_DURATION_TIMESTEPS) + '.pickle')
-        self.path_2_save_tgt = os.path.join('pickle_data/', split + '_tgt_trajectory_data_' + name_pickle + '_' + str(_PRED_DURATION_TIMESTEPS) + '.pickle')
-        if load_pickle and os.path.exists(self.path_2_save_src):
-            with open(self.path_2_save_src, 'rb') as f:
-                self.src_actor_trajectory_by_id = pickle.load(f)
-            with open(self.path_2_save_tgt, 'rb') as f:
-                self.tgt_actor_trajectory_by_id = pickle.load(f)
+        self.path_2_save = os.path.join('pickle_data/', split + '_trajectory_data_' + name_pickle + '.pickle')
+        if load_pickle and os.path.exists(self.path_2_save):
+            with open(self.path_2_save, 'rb') as f:
+                sample = pickle.load(f)
+                self.src_actor_trajectory_by_id = sample['src']
+                self.tgt_actor_trajectory_by_id = sample['tgt']
+                self.src_actor_offset_traj_id = sample['offset_src']
+                self.tgt_actor_offset_traj_id = sample['offset_tgt']
         else:
             argoverse_scenario_dir = os.path.join(dataset_dir, 'argoverse2', 'motion_forecasting', split)
             argoverse_scenario_dir = Path(argoverse_scenario_dir)
@@ -78,16 +82,20 @@ class Av2MotionForecastingDataset (Dataset):
             #     self.__generate_scenario(scenario_path)
 
         # Save the data if is not processed
-        if save_pickle:
+        if save_pickle or not os.path.exists(self.path_2_save):
             self.__save_trajectories()
-        self.src_sequences, self.tgt_sequences = self.__prepare_data()
+        self.src_sequences, self.tgt_sequences, self.src_offset_sequences, self.tgt_offset_sequences = self.__prepare_data()
     # ===================================================================================== #   
     def __save_trajectories (self):
         # Save the trajectories in a pickle
-        with open(self.path_2_save_src, 'wb') as f:
-            pickle.dump(self.src_actor_trajectory_by_id, f)
-        with open(self.path_2_save_tgt, 'wb') as f:
-            pickle.dump(self.tgt_actor_trajectory_by_id, f)
+        sample = {}
+        sample['src'] = self.src_actor_trajectory_by_id
+        sample['tgt'] = self.tgt_actor_trajectory_by_id
+        sample['offset_src'] = self.src_actor_offset_traj_id
+        sample['offset_tgt'] = self.tgt_actor_offset_traj_id
+        
+        with open(self.path_2_save, 'wb') as f:
+            pickle.dump(sample, f)
     # ===================================================================================== #
     def __generate_scenario_parallel (self, scenarios_path: List) -> None:
         for scenario_path in scenarios_path:
@@ -214,6 +222,8 @@ class Av2MotionForecastingDataset (Dataset):
                 # Save the trajectory
                 self.src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf
                 self.tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf
+                self.src_actor_offset_traj_id[track_id] = np.vstack((src_agent_coordinate_tf[0], src_agent_coordinate_tf[1:] - src_agent_coordinate_tf[:-1]))
+                self.tgt_actor_offset_traj_id[track_id] = np.vstack((tgt_agent_coordinate_tf[0], tgt_agent_coordinate_tf[1:] - tgt_agent_coordinate_tf[:-1]))
         else:
             # Not found focal agent or target agent
             # Delete scenario
@@ -225,10 +235,14 @@ class Av2MotionForecastingDataset (Dataset):
     def __prepare_data (self) -> list:
         src_sequences = []
         tgt_sequences = []
+        src_offset_sequences = []
+        tgt_offset_sequences = []
         for key in self.src_actor_trajectory_by_id.keys():
             src_sequences.append(self.src_actor_trajectory_by_id[key].tolist())
             tgt_sequences.append(self.tgt_actor_trajectory_by_id[key].tolist())
-        return np.array(src_sequences), np.array(tgt_sequences)
+            src_offset_sequences.append(self.src_actor_offset_traj_id[key].tolist())
+            tgt_offset_sequences.append(self.tgt_actor_offset_traj_id[key].tolist())
+        return np.array(src_sequences), np.array(tgt_sequences), np.array(src_offset_sequences), np.array(tgt_offset_sequences)
     # ===================================================================================== #
     def __len__(self):
         return len (self.src_sequences)
@@ -245,4 +259,6 @@ class Av2MotionForecastingDataset (Dataset):
         sample = {}
         sample ['src'] = torch.tensor(self.src_sequences[idx], dtype=torch.float32)
         sample ['tgt'] = torch.tensor(self.tgt_sequences[idx], dtype=torch.float32)
+        sample ['offset_src'] = torch.tensor(self.src_offset_sequences[idx], dtype=torch.float32)
+        sample ['offset_tgt'] = torch.tensor(self.tgt_offset_sequences[idx], dtype=torch.float32)
         return sample           
