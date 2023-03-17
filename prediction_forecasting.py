@@ -314,7 +314,7 @@ class TransformerPrediction ():
                     
                     for k in range(self.num_queries):
                         color = np.random.rand(1,3)
-                        plt.plot (pred[0,:,k,0].cpu().numpy(), pred[0,:,k,1].cpu().numpy(), '--o', color=color, label='prediction' + str(track_id))
+                        plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label='prediction' + str(track_id))
                     plt.plot (src[0,:,0].cpu().numpy(), src[0,:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical' + str(track_id))
                     
                     plt.plot (tgt[0,:,0].cpu().numpy(), tgt[0,:,1].cpu().numpy(), '--o', color=(0,1,0), label='GT' + str(track_id))
