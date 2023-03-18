@@ -22,9 +22,9 @@ import numpy.typing as npt
 from configs import Config
 # ===================================================================================== #
 # Configure constants
-_OBS_DURATION_TIMESTEPS: Final[int] = 8 # The first 5 s of each scenario is denoted as the observed window
-_PRED_DURATION_TIMESTEPS: Final[int] = 12 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
-_TOTAL_DURATION_TIMESTEPS: Final[int] = 20
+_OBS_DURATION_TIMESTEPS: Final[int] = 50 # The first 5 s of each scenario is denoted as the observed window
+_PRED_DURATION_TIMESTEPS: Final[int] = 60 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
+_TOTAL_DURATION_TIMESTEPS: Final[int] = 110
 # ===================================================================================== #
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -60,8 +60,6 @@ class TransformerPrediction ():
         
         config_data = cfg.get('data')
         self.save_path = 'models_weights/'
-        self.filename_pickle_src = config_data['filename_pickle_src']
-        self.filename_pickle_tgt = config_data['filename_pickle_tgt']
         self.load_pickle = config_data ['load_pickle']
         self.save_pickle = config_data['save_pickle']
                 
@@ -69,6 +67,7 @@ class TransformerPrediction ():
         self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         
         self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+                                future_size=self.future_size,
                                 d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # ---------------------------------------------------------------------------------------------------- #
         # self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.output_traj_size, 
@@ -155,7 +154,9 @@ class TransformerPrediction ():
             if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                 continue
             # Only get the 'FOCAL TACK' and 'SCORED CARS'
-            if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
+            # if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
+            #     continue
+            if track.category != data_schema.TrackCategory.FOCAL_TRACK:
                 continue
             # Get timesteps for which actor data is valid
             actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
