@@ -16,9 +16,9 @@ import threading
 
 # ===================================================================================== #
 # Configure constants
-_OBS_DURATION_TIMESTEPS: Final[int] = 8 # The first 5 s of each scenario is denoted as the observed window
-_PRED_DURATION_TIMESTEPS: Final[int] = 12 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
-_TOTAL_DURATION_TIMESTEPS: Final[int] = 20
+_OBS_DURATION_TIMESTEPS: Final[int] = 50 # The first 5 s of each scenario is denoted as the observed window
+_PRED_DURATION_TIMESTEPS: Final[int] = 60 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
+_TOTAL_DURATION_TIMESTEPS: Final[int] = 110
 _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.STATIC,
     ObjectType.BACKGROUND,
@@ -126,7 +126,9 @@ class Av2MotionForecastingDataset (Dataset):
             if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                 continue
             # Only get the 'FOCAL TACK' and 'SCORED CARS'
-            if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
+            # if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
+            #     continue
+            if track.category != data_schema.TrackCategory.FOCAL_TRACK:
                 continue
             
             # Get timesteps for which actor data is valid
