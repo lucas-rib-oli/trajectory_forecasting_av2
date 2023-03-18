@@ -258,7 +258,7 @@ class TransformerTrain ():
               f'iteration {self.best_iteration} | epoch {self.best_epoch} |')
         print(Fore.GREEN + '=' * 89 + Fore.RESET)
         # Write in tensorboard
-        self.tb_writer.add_scalar('Loss/validation', self.last_validation_loss, self.iteration)
+        self.tb_writer.add_scalar('Loss/validation', self.last_validation_loss, self.epoch)
         
         
     # ===================================================================================== #
