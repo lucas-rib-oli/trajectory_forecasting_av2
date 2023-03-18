@@ -36,12 +36,13 @@ class TransLoss (nn.Module):
         reg_loss = self.reg_loss_fn(closest_traj, gt)
         return reg_loss
     # ===================================================================================== #
-    def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor) -> torch.Tensor:
+    def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, offset_gt_trajs: torch.Tensor) -> torch.Tensor:
         """Forward function
 
         Args:
             pred_trajs (torch.Tensor): _description_
             gt_trajs (torch.Tensor): _description_
+            offset_gt_trajs (torch.Tensor): _description_
         """
         bs = pred_trajs.shape[0]
         future_traj_size = pred_trajs.shape[2]
