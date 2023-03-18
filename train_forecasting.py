@@ -95,6 +95,7 @@ class TransformerTrain ():
         # ----------------------------------------------------------------------- #
         # Get the model
         self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+                                future_size=self.future_size,
                                 d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # Get the optimizer
         # self.optimizer = NoamOpt( self.d_model, len(self.train_dataloader) * self.opt_warmup,

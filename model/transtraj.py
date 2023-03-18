@@ -12,12 +12,15 @@ class TransTraj (nn.Module):
         nn (_type_): _description_
     """
     def __init__(self, pose_dim: int, dec_out_size: int, num_queries: int,
+                 future_size: int = 60,
                  d_model = 512, nhead = 8, N = 6, dim_feedforward = 2048, dropout=0.1):
         """_summary_
 
         Args:
             pose_dim (int): Pose dimension [x,y, yaw, v ...] || Encoder input size
             dec_out_size (int): Decoder output size
+            num_queries (int): Number of trajectories
+            future_size (int, optional): the output trajectory size
             d_model (int, optional): the number of expected features in the input -> embedding dimension. Defaults to 512.
             nhead (int, optional): the number of heads in the multiheadattention models. Defaults to 8.
             N (int, optional): the number of sub-encoder-layers in the encoder -> number of nn.TransformerEncoderLayer in nn.TransformerEncoder. Defaults to 6.
@@ -27,6 +30,7 @@ class TransTraj (nn.Module):
         
         super().__init__()
         self.model_type = 'Transformer'
+        self.future_size = future_size
         self.d_model = d_model
         self.pose_dim = pose_dim
         self.enc_linear_embedding = LinearEmbedding(pose_dim, d_model)
@@ -74,7 +78,7 @@ class TransTraj (nn.Module):
                 nn.init.xavier_uniform_(param)
 
         self.num_queries = num_queries # Number trajectories
-        self.query_embed = nn.Embedding(self.num_queries, d_model)        
+        self.query_embed = nn.Embedding(self.num_queries, d_model)
         # self.query_embed.weight.requires_grad == False
         nn.init.orthogonal_(self.query_embed.weight)
         
