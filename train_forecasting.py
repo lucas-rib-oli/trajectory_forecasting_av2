@@ -96,14 +96,14 @@ class TransformerTrain ():
         # Get the model
         self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
                                 d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
-        # Cast to double
-        # self.model = self.model.double()
         # Get the optimizer
+        # self.optimizer = NoamOpt( self.d_model, len(self.train_dataloader) * self.opt_warmup,
+        #                           torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, betas=(0.9, 0.98), eps=1e-9), self.opt_factor )
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, betas=(0.9, 0.98), eps=1e-9)
+        # Linear decay
+        lr_lambda = lambda epoch: 1 - (epoch / self.num_epochs)
+        self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
         
-        self.optimizer = NoamOpt( self.d_model, len(self.train_dataloader) * self.opt_warmup,
-                                  torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, betas=(0.9, 0.98), eps=1e-9), self.opt_factor )
-        
-        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=20, gamma=0.5)
         # Initialize the loss function
         # self.loss_fn = nn.HuberLoss(reduction='mean')
         self.loss_fn = TransLoss()
@@ -177,7 +177,7 @@ class TransformerTrain ():
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
-                self.optimizer.optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
                 # ----------------------------------------------------------------------- #
@@ -201,9 +201,9 @@ class TransformerTrain ():
             self.tb_writer.add_scalar('Loss epoch/train', loss_epoch, self.epoch)
             # Compute validation per each epoch
             self.validation()
-            # Scheduler step
-            self.optimizer.step_lr_scheduler()
-            self.learning_rate = get_lr(self.optimizer.optimizer)
+            # Scheduler step, update learning rate
+            self.lr_scheduler.step()
+            self.learning_rate = get_lr(self.optimizer)
             self.tb_writer.add_scalar('Learning Rate/epoch', self.learning_rate, self.epoch)
        
            
@@ -270,7 +270,7 @@ class TransformerTrain ():
             'epoch': self.epoch,
             'iteration': self.iteration,
             'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.optimizer.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
             'train_loss': self.last_train_loss,
             'eval_loss': self.last_validation_loss,
             # check on load to map model to the correct device
@@ -290,13 +290,13 @@ class TransformerTrain ():
         if os.path.exists(file_name):
             checkpoint = torch.load(file_name)
             self.model.load_state_dict(torch.load(file_name)['model_state_dict'])
-            self.optimizer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.iteration = checkpoint['iteration']
             self.start_epoch = checkpoint['epoch']
             self.learning_rate = checkpoint['lr']
             self.best_validation_loss = checkpoint['best_validation_loss']
             
-            for p in self.optimizer.optimizer.param_groups:
+            for p in self.optimizer.param_groups:
                 p['lr'] = self.learning_rate
         else:
             print (Fore.RED + 'Eror to open .pth' + Fore.RESET)
