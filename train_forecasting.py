@@ -156,11 +156,10 @@ class TransformerTrain ():
                 # Get the data from the dataloader
                 src: torch.Tensor = data['src']
                 tgt: torch.Tensor = data['tgt']
-                
+                offset_tgt: torch.Tensor = data['offset_tgt']
                 src = src.to(self.device) # (bs, sequence length, feature number)
-                # src = src.double()
                 tgt = tgt.to(self.device)
-                # tgt = tgt.double()
+                offset_tgt = offset_tgt.to(self.device)
                 
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
@@ -173,7 +172,7 @@ class TransformerTrain ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (src, tgt, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, tgt)
+                loss = self.loss_fn(pred, conf, tgt, offset_tgt)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
@@ -222,11 +221,10 @@ class TransformerTrain ():
             with torch.no_grad():                
                 src: torch.Tensor = data['src']
                 tgt: torch.Tensor = data['tgt']
-                
+                offset_tgt: torch.Tensor = data['offset_tgt']
                 src = src.to(self.device) # (bs, sequence length, feature number)
-                # src = src.double()
                 tgt = tgt.to(self.device)
-                # tgt = tgt.double()
+                offset_tgt = offset_tgt.to(self.device)
                 
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
@@ -239,7 +237,7 @@ class TransformerTrain ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (src, tgt, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, tgt)
+                loss = self.loss_fn(pred, conf, tgt, offset_tgt)
                 validation_losses.append(loss.detach().cpu().numpy())            
         # save checkpoint model
         self.save_model('check')
