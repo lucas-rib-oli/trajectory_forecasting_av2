@@ -62,7 +62,7 @@ class TransTraj (nn.Module):
                        nn.LayerNorm(d_model*2),
                        nn.ReLU(),
                        nn.Linear(d_model*2, d_model, bias=True),
-                       nn.Linear(d_model, dec_out_size, bias=True))
+                       nn.Linear(d_model, dec_out_size, bias=True)) # Dim_features (x,y ..) * N Frames futuros --> view (60, pose_dim (2 or 6))
         
         self.cls_FFN = PointerwiseFeedforward(d_model, 2*d_model, dropout=dropout)
         self.classification_layer = nn.Sequential(
