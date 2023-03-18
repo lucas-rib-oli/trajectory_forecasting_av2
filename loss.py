@@ -5,7 +5,7 @@ class TransLoss (nn.Module):
     def __init__(self, reduction: str = 'sum') -> None:
         super().__init__()
         
-        self.reg_loss_fn = nn.HuberLoss(reduction=reduction)
+        self.reg_loss_fn = nn.PairwiseDistance(p=2)
         self.class_loss_fn = nn.CrossEntropyLoss()
     # ===================================================================================== #   
     def get_one_hot_vector_by_distance (self, pred_trajs: torch.Tensor, gt_trajs: torch.Tensor) -> torch.Tensor:
@@ -48,17 +48,22 @@ class TransLoss (nn.Module):
         future_traj_size = pred_trajs.shape[2]
         output_pose_dim = pred_trajs.shape[-1]
         K = pred_trajs.shape[1] # Number trajectory of a target
-        
-        gt_overdim: torch.Tensor = gt_trajs.view(bs, 1, future_traj_size, output_pose_dim).repeat(1, K, 1, 1)
-        # ----------------------------------------------------------------------- #        
-        # Compute regresion loss
-        reg_loss = self.reg_loss_fn(pred_trajs, gt_overdim)
+        # ----------------------------------------------------------------------- #
+        gt_overdim: torch.Tensor = gt_trajs.unsqueeze(1).repeat(1, K, 1, 1)
+        offset_gt_trajs_overdim: torch.Tensor = offset_gt_trajs.unsqueeze(1).repeat(1, K, 1, 1)
         # ----------------------------------------------------------------------- #
         # Compute classification loss
-        one_hot_vector = self.get_one_hot_vector_by_distance (pred_trajs, gt_overdim)
+        one_hot_vector, index = self.get_one_hot_vector_by_distance (pred_trajs, gt_overdim)
         cls_los = self.class_loss_fn(pred_scores, one_hot_vector)
+        # ----------------------------------------------------------------------- #        
+        # Compute regresion loss
+        # pred_trajs_offset = torch.vstack((pred_trajs[:,:,0,:].unsqueeze(2), pred_trajs[:,:,1:,:] - pred_trajs[:,:,:-1,:]))
+        # pred_trajs_offset = torch.cat((pred_trajs[:,:,0,:].unsqueeze(2), pred_trajs[:,:,1:,:] - pred_trajs[:,:,:-1,:]), dim=2)
+        reg_loss = self.reg_loss_fn (pred_trajs, gt_overdim[:,:,:,:2])
+        reg_loss = torch.sum(reg_loss, -1)
+        reg_loss = torch.mean(reg_loss)
         # ----------------------------------------------------------------------- #
         # Final loss
         loss = reg_loss + cls_los
-
+        
         return loss
