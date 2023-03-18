@@ -101,7 +101,7 @@ class TransTraj (nn.Module):
         bs = src.shape[0]
         num_traj = pred.shape[1]
         
-        pred = pred.view(bs, num_traj, -1, self.pose_dim) # [bs, N traj, Traj size, out feats(x, y, ...)]
+        pred = pred.view(bs, num_traj, -1, 2) # [bs, N traj, Traj size, out feats(x, y, ...)]
         cls_h = self.cls_FFN(out)
         cls_h = self.classification_layer(cls_h).squeeze(dim=-1)
         conf: torch.Tensor = self.cls_opt(cls_h)
