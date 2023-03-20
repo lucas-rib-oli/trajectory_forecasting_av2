@@ -6,6 +6,8 @@ from typing import Final, List, Optional, Sequence, Set, Tuple, Dict
 import numpy as np
 import numpy.typing as npt
 from colorama import Fore
+import rich.progress
+import rich
 import matplotlib.pyplot as plt
 from av2.datasets.motion_forecasting import scenario_serialization, data_schema
 from av2.datasets.motion_forecasting.data_schema import ArgoverseScenario, ObjectType
@@ -22,7 +24,7 @@ parser.add_argument(
 parser.add_argument(
     '--output_filename',
     type=str,
-    default='scored',
+    default='target',
     help='Filename of the data')
 
 args = parser.parse_args()
@@ -47,8 +49,11 @@ def prepare_data_av2(split: str):
     tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
     src_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
     tgt_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
+    all_scene_data = []
+    all_traj_data = []
+    all_map_data = []
     # ----------------------------------------------------------------------- #
-    for scenario_path in all_scenario_files:
+    for scenario_path in rich.progress.track(all_scenario_files, 'Processing data ...'):
         scenario_id = scenario_path.stem.split("_")[-1]
         static_map_path = scenario_path.parents[0] / f"log_map_archive_{scenario_id}.json"
         try:
@@ -57,10 +62,16 @@ def prepare_data_av2(split: str):
             print(Fore.RED + 'Fail to read: ' + Fore.RESET, scenario_path)
             return
         static_map = ArgoverseStaticMap.from_json(static_map_path)
-        scenario_src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-        scenario_tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
+        # ----------------------------------------------------------------------- #
+        raw_scene_src_actor_traj_id: Dict[str, npt.NDArray] = {}
+        raw_scene_tgt_actor_traj_id: Dict[str, npt.NDArray] = {}
         
-        polylines_id: Dict[int, List[npt.NDArray]] = {}
+        # Variables to store
+        scene_src_actor_traj_id: Dict[str, npt.NDArray] = {}
+        scene_tgt_actor_traj_id: Dict[str, npt.NDArray] = {}
+        scene_src_actor_offTraj_id: Dict[str, npt.NDArray] = {}
+        scene_tgt_actor_offTraj_id: Dict[str, npt.NDArray] = {}
+        scene_data = {}
         # ----------------------------------------------------------------------- #
         # Get trajectories
         for track in scenario.tracks:
@@ -85,17 +96,17 @@ def prepare_data_av2(split: str):
             # Get target actor trajectory and heading history -> forescated or predicted trajectory
             tgt_actor_trajectory = actor_state[_OBS_DURATION_TIMESTEPS:_TOTAL_DURATION_TIMESTEPS]
             
-            scenario_src_actor_trajectory_by_id[track.track_id] = src_actor_trajectory
-            scenario_tgt_actor_trajectory_by_id[track.track_id] = tgt_actor_trajectory
+            raw_scene_src_actor_traj_id[track.track_id] = src_actor_trajectory
+            raw_scene_tgt_actor_traj_id[track.track_id] = tgt_actor_trajectory
         # ----------------------------------------------------------------------- #
-        if scenario.focal_track_id in scenario_tgt_actor_trajectory_by_id.keys():
+        if scenario.focal_track_id in raw_scene_tgt_actor_traj_id.keys():
             # Get the final observed trajectory of the focal agent
-            focal_coordinate = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][-1, 0:2]
+            focal_coordinate = raw_scene_src_actor_traj_id[scenario.focal_track_id][-1, 0:2]
             
-            src_full_traj = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][:, 0:2]
-            tgt_full_traj = scenario_tgt_actor_trajectory_by_id[scenario.focal_track_id][:, 0:2]
+            src_full_traj = raw_scene_src_actor_traj_id[scenario.focal_track_id][:, 0:2]
+            tgt_full_traj = raw_scene_tgt_actor_traj_id[scenario.focal_track_id][:, 0:2]
             
-            heading_vector = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][-1, 2:4]
+            heading_vector = raw_scene_src_actor_traj_id[scenario.focal_track_id][-1, 2:4]
             sin_heading = heading_vector[0]
             cos_heading = heading_vector[1]
             # Get the focal heading
@@ -113,8 +124,8 @@ def prepare_data_av2(split: str):
                                    [          0,            0, 0, 1]])
             
             # Transform the lane polylines
+            scene_lanes_data: List[Dict] = []
             for lane_segment in static_map.vector_lane_segments.values():
-                
                 left_lane_boundary = lane_segment.left_lane_boundary.xyz
                 right_lane_boundary = lane_segment.right_lane_boundary.xyz
                 
@@ -123,23 +134,34 @@ def prepare_data_av2(split: str):
                 # Substract the center
                 left_lane_boundary = left_lane_boundary - np.append (focal_coordinate, [0, 0])
                 right_lane_boundary = right_lane_boundary - np.append (focal_coordinate, [0, 0])
-                
+                # Rotate
                 left_lane_boundary = np.dot(rot_matrix, left_lane_boundary.T).T
                 right_lane_boundary = np.dot(rot_matrix, right_lane_boundary.T).T
                 
-                polylines = [left_lane_boundary[:,0:3], right_lane_boundary[:,0:3]]
-                polylines_id[lane_segment.id] = polylines
+                # save the data
+                lane_data = {"ID": lane_segment.id,
+                             "left_lane_boundary": left_lane_boundary,
+                             "right_lane_boundary": right_lane_boundary,
+                             "is_intersection": lane_segment.is_intersection,
+                             "lane_type": lane_segment.lane_type,
+                             "left_mark_type": lane_segment.left_mark_type,
+                             "right_mark_type": lane_segment.right_mark_type,
+                             "right_neighbor_id": lane_segment.right_neighbor_id,
+                             "left_neighbor_id": lane_segment.left_neighbor_id
+                            }
+                scene_lanes_data.append(lane_data)
             
+            scene_agents_data: List[Dict] = []
             # Transform all trajectories
-            for track_id in scenario_tgt_actor_trajectory_by_id.keys():
-                src_agent_coordinate = scenario_src_actor_trajectory_by_id[track_id][:, 0:2]
-                tgt_agent_coordinate = scenario_tgt_actor_trajectory_by_id[track_id][:, 0:2]
+            for track_id in raw_scene_tgt_actor_traj_id.keys():
+                src_agent_coordinate = raw_scene_src_actor_traj_id[track_id][:, 0:2]
+                tgt_agent_coordinate = raw_scene_tgt_actor_traj_id[track_id][:, 0:2]
                 
-                src_agent_heading = np.arctan2(scenario_src_actor_trajectory_by_id[track_id][:,2], scenario_src_actor_trajectory_by_id[track_id][:,3])
-                tgt_agent_heading = np.arctan2(scenario_tgt_actor_trajectory_by_id[track_id][:,2], scenario_tgt_actor_trajectory_by_id[track_id][:,3])
+                src_agent_heading = np.arctan2(raw_scene_src_actor_traj_id[track_id][:,2], raw_scene_src_actor_traj_id[track_id][:,3])
+                tgt_agent_heading = np.arctan2(raw_scene_tgt_actor_traj_id[track_id][:,2], raw_scene_tgt_actor_traj_id[track_id][:,3])
                 
-                src_agent_velocity = scenario_src_actor_trajectory_by_id[track_id][:, 4:]
-                tgt_agent_velocity = scenario_tgt_actor_trajectory_by_id[track_id][:, 4:]
+                src_agent_velocity = raw_scene_src_actor_traj_id[track_id][:, 4:]
+                tgt_agent_velocity = raw_scene_tgt_actor_traj_id[track_id][:, 4:]
                 
                 # Add Z --> 0 and make matrix 4x4
                 src_agent_coordinate = np.append (src_agent_coordinate, src_zeros_vector, axis=1)
@@ -181,56 +203,66 @@ def prepare_data_av2(split: str):
                 src_agent_coordinate_tf = np.append (src_agent_coordinate_tf, src_agent_velocity_tf, axis=1)
                 tgt_agent_coordinate_tf = np.append (tgt_agent_coordinate_tf, tgt_agent_velocity_tf, axis=1)
                 
-                # Save the trajectory
+                # Compute the offsets between points
+                src_actor_offset = np.vstack((src_agent_coordinate_tf[0], src_agent_coordinate_tf[1:] - src_agent_coordinate_tf[:-1]))
+                tgt_actor_offset = np.vstack((tgt_agent_coordinate_tf[0], tgt_agent_coordinate_tf[1:] - tgt_agent_coordinate_tf[:-1]))
+                
+                # Save the scene trajectory
+                scene_src_actor_traj_id[track_id] = src_agent_coordinate_tf
+                scene_tgt_actor_traj_id[track_id] = tgt_agent_coordinate_tf
+                scene_src_actor_offTraj_id[track_id] = src_actor_offset
+                scene_tgt_actor_offTraj_id[track_id] = tgt_actor_offset
+                # Save the trajectories by ID
                 src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf
                 tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf
-                src_actor_offset_traj_id[track_id] = np.vstack((src_agent_coordinate_tf[0], src_agent_coordinate_tf[1:] - src_agent_coordinate_tf[:-1]))
-                tgt_actor_offset_traj_id[track_id] = np.vstack((tgt_agent_coordinate_tf[0], tgt_agent_coordinate_tf[1:] - tgt_agent_coordinate_tf[:-1]))
+                src_actor_offset_traj_id[track_id] = src_actor_offset
+                tgt_actor_offset_traj_id[track_id] = tgt_actor_offset
+                # Save the data
+                agent_data = { "ID": track_id,
+                               "historic": src_agent_coordinate_tf,
+                               "future": tgt_agent_coordinate_tf,
+                               "offset_historic": src_actor_offset,
+                               "offset_future": tgt_actor_offset
+                             }
+                scene_agents_data.append (agent_data)
+            # ----------------------------------------------------------------------- #
+            scene_data['agents'] = scene_agents_data
+            scene_data['map'] = scene_lanes_data
+            all_scene_data.append(scene_data)
+            all_traj_data.append(scene_agents_data)
+            all_map_data.append(scene_lanes_data)
+            
             # ----------------------------------------------------------------------- #
             # Plot
-            # for lane_id in polylines_id.keys():
-            #     polylines = polylines_id[lane_id]
+            # for lane_data in scene_lanes_data:
+            #     polylines = [lane_data['left_lane_boundary'], lane_data['right_lane_boundary']]
             #     for polyline in polylines:
             #         plt.plot(polyline[:, 0], polyline[:, 1], "-", linewidth=1.0, color='r', alpha=1.0)
-            # for id_agent in src_actor_trajectory_by_id.keys():
-            #     src_traj = src_actor_trajectory_by_id[id_agent]
-            #     tgt_traj = tgt_actor_trajectory_by_id[id_agent]
+            # for track_id in scene_src_actor_traj_id.keys():
+            #     src_traj = scene_src_actor_traj_id[track_id]
+            #     tgt_traj = scene_tgt_actor_traj_id[track_id]
             #     plt.plot(src_traj[:, 0], src_traj[:, 1], "-", linewidth=1.0, color='b', alpha=1.0)
             #     plt.plot(tgt_traj[:, 0], tgt_traj[:, 1], "-", linewidth=1.0, color='g', alpha=1.0)
             # plt.show()
-                
         else:
             # Not found focal agent or target agent
             # Delete scenario
             for track in scenario.tracks:
-                if track.track_id in scenario_tgt_actor_trajectory_by_id.keys():
-                    del scenario_src_actor_trajectory_by_id[track.track_id]
-                    del scenario_tgt_actor_trajectory_by_id[track.track_id]
+                if track.track_id in raw_scene_tgt_actor_traj_id.keys():
+                    del raw_scene_src_actor_traj_id[track.track_id]
+                    del raw_scene_tgt_actor_traj_id[track.track_id]
     # ----------------------------------------------------------------------- #
-    src_sequences = []
-    tgt_sequences = []
-    src_offset_sequences = []
-    tgt_offset_sequences = []
-    for key in src_actor_trajectory_by_id.keys():
-        src_sequences.append(src_actor_trajectory_by_id[key].tolist())
-        tgt_sequences.append(tgt_actor_trajectory_by_id[key].tolist())
-        src_offset_sequences.append(src_actor_offset_traj_id[key].tolist())
-        tgt_offset_sequences.append(tgt_actor_offset_traj_id[key].tolist())
-    np_src_sequences = np.array(src_sequences)
-    np_tgt_sequences = np.array(tgt_sequences)
-    np_src_offset_sequences = np.array(src_offset_sequences)
-    np_tgt_offset_sequences = np.array(tgt_offset_sequences)
+    # Print info
+    print (Fore.CYAN + 'Size trajectory data: ' + Fore.WHITE + str(len(all_traj_data)) + Fore.RESET)
+    print (Fore.CYAN + 'Size map data: ' + Fore.WHITE + str(len(all_map_data)) + Fore.RESET)
     # ----------------------------------------------------------------------- #
-    # Save the trajectories in a pickle
-    sample = {}
-    sample['src'] = src_actor_trajectory_by_id
-    sample['tgt'] = tgt_actor_trajectory_by_id
-    sample['offset_src'] = src_actor_offset_traj_id
-    sample['offset_tgt'] = tgt_actor_offset_traj_id
-    
-    path_2_save = os.path.join('pickle_data/', split + '_trajectory_data_' + args.output_filename + '.pickle')
-    with open(path_2_save, 'wb') as f:
-        pickle.dump(sample, f)
+    # Save the data in a pickle
+    path_2_save_traj = os.path.join('pickle_data/', split + '_trajectory_data_' + args.output_filename + '.pickle')
+    path_2_save_map = os.path.join('pickle_data/', split + '_map_data_' + args.output_filename + '.pickle')
+    with open(path_2_save_traj, 'wb') as f:
+        pickle.dump(all_traj_data, f)
+    with open(path_2_save_map, 'wb') as f:
+        pickle.dump(all_map_data, f)
 # ===================================================================================== #
 if __name__ == '__main__':
     if args.dataset == 'av2':
