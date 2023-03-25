@@ -25,11 +25,29 @@ _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.CONSTRUCTION,
     ObjectType.RIDERLESS_BICYCLE,
 }
+# Lane class dict
+lane_marktype_dict = {
+    "DASH_SOLID_YELLOW": 1,
+    "DASH_SOLID_WHITE": 2,
+    "DASHED_WHITE": 3,
+    "DASHED_YELLOW": 4,
+    "DOUBLE_SOLID_YELLOW": 5,
+    "DOUBLE_SOLID_WHITE": 6,
+    "DOUBLE_DASH_YELLOW": 7,
+    "DOUBLE_DASH_WHITE": 8,
+    "SOLID_YELLOW": 9,
+    "SOLID_WHITE": 10,
+    "SOLID_DASH_WHITE": 11,
+    "SOLID_DASH_YELLOW": 12,
+    "SOLID_BLUE": 13,
+    "NONE": 14,
+    "UNKNOWN": 15
+}
 # ===================================================================================== #
 class Av2MotionForecastingDataset (Dataset):
     """ PyTorch Dataset """
     def __init__(self, dataset_dir: str, split: str = "train", output_traj_size: int = 8, 
-                 name_pickle: str = 'scored', load_pickle = True, save_pickle=False):
+                 name_pickle: str = 'scored'):
         
         self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
@@ -37,217 +55,30 @@ class Av2MotionForecastingDataset (Dataset):
         self.tgt_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
         # ----------------------------------------------------------------------- #
         # Check if exists processed trajectories 
-        self.path_2_save = os.path.join('pickle_data/', split + '_trajectory_data_' + name_pickle + '.pickle')
-        if load_pickle and os.path.exists(self.path_2_save):
-            with open(self.path_2_save, 'rb') as f:
+        self.path_2_traj = os.path.join('pickle_data/', split + '_trajectory_data_' + name_pickle + '.pickle')
+        self.path_2_map = os.path.join('pickle_data/', split + '_map_data_' + name_pickle + '.pickle')
+        
+        # Read trajectory data
+        if os.path.exists(self.path_2_traj):
+            with open(self.path_2_traj, 'rb') as f:
                 sample = pickle.load(f)
-                self.src_actor_trajectory_by_id = sample['src']
-                self.tgt_actor_trajectory_by_id = sample['tgt']
-                self.src_actor_offset_traj_id = sample['offset_src']
-                self.tgt_actor_offset_traj_id = sample['offset_tgt']
+                self.all_traj_data = sample
         else:
-            argoverse_scenario_dir = os.path.join(dataset_dir, 'argoverse2', 'motion_forecasting', split)
-            argoverse_scenario_dir = Path(argoverse_scenario_dir)
-            all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
-            
-            begin = 0
-            end = 0
-            threads = list()
-            scenario_path_splitted = list()
-            num_threads = 32
-            length = int (len(all_scenario_files) / num_threads)
-            remainder = int (len(all_scenario_files) % num_threads)
-            
-            for _ in range (0, min(len(all_scenario_files), num_threads)):
-                if remainder > 0:
-                    if remainder == 0:
-                        end += length
-                    else:
-                        end += length + 1
-                    remainder -= 1
-                else:
-                    end += length
-                scenario_path_splitted.append (all_scenario_files[begin:end])
-                begin = end
-            
-            for i in range(0, len(scenario_path_splitted)):
-                x = threading.Thread(target=self.__generate_scenario_parallel, args=(scenario_path_splitted[i],))
-                threads.append(x)
-                x.start()
-            # Join threads
-            for index, thread in track(enumerate(threads)):
-                thread.join()
-                 
-            # for scenario_path in track(all_scenario_files):
-            #     self.__generate_scenario(scenario_path)
-
-        # Save the data if is not processed
-        if save_pickle or not os.path.exists(self.path_2_save):
-            self.__save_trajectories()
-        self.src_sequences, self.tgt_sequences, self.src_offset_sequences, self.tgt_offset_sequences = self.__prepare_data()
-    # ===================================================================================== #   
-    def __save_trajectories (self):
-        # Save the trajectories in a pickle
-        sample = {}
-        sample['src'] = self.src_actor_trajectory_by_id
-        sample['tgt'] = self.tgt_actor_trajectory_by_id
-        sample['offset_src'] = self.src_actor_offset_traj_id
-        sample['offset_tgt'] = self.tgt_actor_offset_traj_id
-        
-        with open(self.path_2_save, 'wb') as f:
-            pickle.dump(sample, f)
-    # ===================================================================================== #
-    def __generate_scenario_parallel (self, scenarios_path: List) -> None:
-        for scenario_path in scenarios_path:
-            self.__generate_scenario(scenario_path)
-    # ===================================================================================== #
-    def __generate_scenario (self, scenario_path: Path) -> None:
-        """_summary_
-
-        Args:
-            scenario_path (Path): Path to the parquet file corresponding to the Argoverse scenario
-        """
+            print (Fore.CYAN + 'Status: ' + Fore.RED + 'error to open trajectory pickle' + Fore.RED)
+            exit(-1)
+        # Read map data
+        if os.path.exists(self.path_2_map):
+            with open(self.path_2_map, 'rb') as f:
+                sample = pickle.load(f)
+                self.all_map_data = sample
+        else:
+            print (Fore.CYAN + 'Status: ' + Fore.RED + 'error to open map pickle' + Fore.RED)
+            exit(-1)
         # ----------------------------------------------------------------------- #
-        scenario_id = scenario_path.stem.split("_")[-1]
-        static_map_path = scenario_path.parents[0] / f"log_map_archive_{scenario_id}.json"
-        try:
-            scenario = scenario_serialization.load_argoverse_scenario_parquet(scenario_path)
-        except:
-            print(Fore.RED + 'Fail to read: ' + Fore.RESET, scenario_path)
-            return
-        # static_map = ArgoverseStaticMap.from_json(static_map_path)
         
-        scenario_src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-        scenario_tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-        
-        # Get trajectories
-        for track in scenario.tracks:
-            # Only get the vehicles and dont save the ego-vehicle (AV), and 
-            if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
-                continue
-            # Only get the 'FOCAL TACK' and 'SCORED CARS'
-            # if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
-            #     continue
-            if track.category != data_schema.TrackCategory.FOCAL_TRACK:
-                continue
-            
-            # Get timesteps for which actor data is valid
-            actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
-
-            if actor_timesteps.shape[0] < _TOTAL_DURATION_TIMESTEPS:
-                continue
-            # Get actor trajectory and heading history and instantaneous velocity
-            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] + list(object_state.velocity) for object_state in track.object_states])
-            # Get source actor trajectory and heading history -> observerd or historical trajectory
-            src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
-            # Get target actor trajectory and heading history -> forescated or predicted trajectory
-            tgt_actor_trajectory = actor_state[_OBS_DURATION_TIMESTEPS:_TOTAL_DURATION_TIMESTEPS]
-            
-            scenario_src_actor_trajectory_by_id[track.track_id] = src_actor_trajectory
-            scenario_tgt_actor_trajectory_by_id[track.track_id] = tgt_actor_trajectory
-        
-        if scenario.focal_track_id in scenario_tgt_actor_trajectory_by_id.keys():
-            # Get the final observed trajectory of the focal agent
-            focal_coordinate = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][-1, 0:2]
-            
-            src_full_traj = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][:, 0:2]
-            tgt_full_traj = scenario_tgt_actor_trajectory_by_id[scenario.focal_track_id][:, 0:2]
-            
-            heading_vector = scenario_src_actor_trajectory_by_id[scenario.focal_track_id][-1, 2:4]
-            sin_heading = heading_vector[0]
-            cos_heading = heading_vector[1]
-            # Get the focal heading
-            focal_heading = np.arctan2(sin_heading,
-                                       cos_heading)
-            
-            src_zeros_vector = np.zeros((src_full_traj.shape[0], 1))
-            src_ones_vector = np.ones((src_full_traj.shape[0], 1))
-            tgt_zeros_vector = np.zeros((tgt_full_traj.shape[0], 1))
-            tgt_ones_vector = np.ones((tgt_full_traj.shape[0], 1))
-            
-            rot_matrix = np.array([[cos_heading, -sin_heading, 0, 0],
-                                   [sin_heading,  cos_heading, 0, 0],
-                                   [          0,            0, 1, 0],
-                                   [          0,            0, 0, 1]])
-
-            # Transform all trajectories
-            for track_id in scenario_tgt_actor_trajectory_by_id.keys():
-                src_agent_coordinate = scenario_src_actor_trajectory_by_id[track_id][:, 0:2]
-                tgt_agent_coordinate = scenario_tgt_actor_trajectory_by_id[track_id][:, 0:2]
-                
-                src_agent_heading = np.arctan2(scenario_src_actor_trajectory_by_id[track_id][:,2], scenario_src_actor_trajectory_by_id[track_id][:,3])
-                tgt_agent_heading = np.arctan2(scenario_tgt_actor_trajectory_by_id[track_id][:,2], scenario_tgt_actor_trajectory_by_id[track_id][:,3])
-                
-                src_agent_velocity = scenario_src_actor_trajectory_by_id[track_id][:, 4:]
-                tgt_agent_velocity = scenario_tgt_actor_trajectory_by_id[track_id][:, 4:]
-                
-                # Add Z --> 0
-                src_agent_coordinate = np.append (src_agent_coordinate, src_zeros_vector, axis=1)
-                src_agent_coordinate = np.append (src_agent_coordinate, src_ones_vector, axis=1)
-                tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_zeros_vector, axis=1)
-                tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_ones_vector, axis=1)
-                
-                src_agent_velocity = np.append (src_agent_velocity, src_zeros_vector, axis=1)
-                src_agent_velocity = np.append (src_agent_velocity, src_ones_vector, axis=1)
-                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_zeros_vector, axis=1)
-                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_ones_vector, axis=1)
-                # Substract the center
-                src_agent_coordinate = src_agent_coordinate - np.append (focal_coordinate, [0, 0])
-                tgt_agent_coordinate = tgt_agent_coordinate - np.append (focal_coordinate, [0, 0])
-                
-                # Transformed trajectory
-                src_agent_coordinate_tf = np.dot(rot_matrix, src_agent_coordinate.T).T
-                tgt_agent_coordinate_tf = np.dot(rot_matrix, tgt_agent_coordinate.T).T
-                # Transformed velocitys
-                src_agent_velocity_tf = np.dot(rot_matrix, src_agent_velocity.T).T
-                tgt_agent_velocity_tf = np.dot(rot_matrix, tgt_agent_velocity.T).T
-                src_agent_velocity_tf = src_agent_velocity_tf[:,0:2] # Get only the components
-                tgt_agent_velocity_tf = tgt_agent_velocity_tf[:,0:2]
-                # Transformed heading
-                src_agent_heading_tf = src_agent_heading - focal_heading
-                tgt_agent_heading_tf = tgt_agent_heading - focal_heading
-                # Normalice heading [-pi, pi)
-                src_agent_heading_tf = (src_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
-                tgt_agent_heading_tf = (tgt_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
-                # Vector heading
-                src_agent_vector_heading_tf = np.array([np.sin(src_agent_heading_tf), np.cos(src_agent_heading_tf)])
-                tgt_agent_vector_heading_tf = np.array([np.sin(tgt_agent_heading_tf), np.cos(tgt_agent_heading_tf)])
-                
-                # Add heading
-                src_agent_coordinate_tf[:,2:4] = src_agent_vector_heading_tf.T
-                tgt_agent_coordinate_tf[:,2:4] = tgt_agent_vector_heading_tf.T
-                
-                # Add velocity
-                src_agent_coordinate_tf = np.append (src_agent_coordinate_tf, src_agent_velocity_tf, axis=1)
-                tgt_agent_coordinate_tf = np.append (tgt_agent_coordinate_tf, tgt_agent_velocity_tf, axis=1)
-                
-                # Save the trajectory
-                self.src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf
-                self.tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf
-                self.src_actor_offset_traj_id[track_id] = np.vstack((src_agent_coordinate_tf[0], src_agent_coordinate_tf[1:] - src_agent_coordinate_tf[:-1]))
-                self.tgt_actor_offset_traj_id[track_id] = np.vstack((tgt_agent_coordinate_tf[0], tgt_agent_coordinate_tf[1:] - tgt_agent_coordinate_tf[:-1]))
-        else:
-            # Not found focal agent or target agent
-            # Delete scenario
-            for track in scenario.tracks:
-                if track.track_id in scenario_tgt_actor_trajectory_by_id.keys():
-                    del scenario_src_actor_trajectory_by_id[track.track_id]
-                    del scenario_tgt_actor_trajectory_by_id[track.track_id]
-    # ===================================================================================== #
-    def __prepare_data (self) -> list:
-        src_sequences = []
-        tgt_sequences = []
-        src_offset_sequences = []
-        tgt_offset_sequences = []
-        for key in self.src_actor_trajectory_by_id.keys():
-            src_sequences.append(self.src_actor_trajectory_by_id[key].tolist())
-            tgt_sequences.append(self.tgt_actor_trajectory_by_id[key].tolist())
-            src_offset_sequences.append(self.src_actor_offset_traj_id[key].tolist())
-            tgt_offset_sequences.append(self.tgt_actor_offset_traj_id[key].tolist())
-        return np.array(src_sequences), np.array(tgt_sequences), np.array(src_offset_sequences), np.array(tgt_offset_sequences)
     # ===================================================================================== #
     def __len__(self):
-        return len (self.src_sequences)
+        return len (self.all_traj_data)
     # ===================================================================================== #
     def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
         """Get data
@@ -259,8 +90,40 @@ class Av2MotionForecastingDataset (Dataset):
             dict: Sequences for the encoder and for the decoder
         """
         sample = {}
-        sample ['src'] = torch.tensor(self.src_sequences[idx], dtype=torch.float32)
-        sample ['tgt'] = torch.tensor(self.tgt_sequences[idx], dtype=torch.float32)
-        sample ['offset_src'] = torch.tensor(self.src_offset_sequences[idx], dtype=torch.float32)
-        sample ['offset_tgt'] = torch.tensor(self.tgt_offset_sequences[idx], dtype=torch.float32)
+        scene_traj_data = self.all_traj_data[idx]
+        historic_trajectories = []
+        future_trajectories = []
+        historic_offset_trajectories = []
+        future_offset_trajectories = []
+
+        for traj_data in scene_traj_data:
+            historic_trajectories.append (traj_data['historic'])
+            future_trajectories.append(traj_data['future'])
+            historic_offset_trajectories.append (traj_data['offset_historic'])
+            future_offset_trajectories.append(traj_data['offset_future'])
+        
+        historic_trajectories = np.asarray(historic_trajectories)
+        future_trajectories = np.asarray(future_trajectories)
+        historic_offset_trajectories = np.asarray(historic_offset_trajectories)
+        future_offset_trajectories = np.asarray(future_offset_trajectories)
+        
+        sample['historic'] = torch.tensor(historic_trajectories, dtype=torch.float32)
+        sample['future'] = torch.tensor(future_trajectories, dtype=torch.float32)
+        sample['offset_historic'] = torch.tensor(historic_offset_trajectories, dtype=torch.float32)
+        sample['offset_future'] = torch.tensor(future_offset_trajectories, dtype=torch.float32)
+        
+        lanes = []
+        scene_lane_data = self.all_map_data[idx]
+        for lane_data in scene_lane_data:
+            shape_vector = lane_data['left_lane_boundary'].shape
+            is_intersection_v = np.repeat (int(lane_data['is_intersection']), shape_vector[0]).reshape(shape_vector[0], 1)
+            left_mark_type_v = np.repeat (lane_marktype_dict[lane_data['left_mark_type']], shape_vector[0]).reshape(shape_vector[0], 1)
+            right_mark_type_v = np.repeat (lane_marktype_dict[lane_data['right_mark_type']], shape_vector[0]).reshape(shape_vector[0], 1)
+            id_v = np.repeat (lane_data['ID'], shape_vector[0]).reshape(shape_vector[0], 1)
+            left_lane_feat = np.hstack ((lane_data['left_lane_boundary'], is_intersection_v, left_mark_type_v, id_v))
+            right_lane_feat = np.hstack ((lane_data['right_lane_boundary'], is_intersection_v, right_mark_type_v, id_v))
+            lanes.append(left_lane_feat)
+            lanes.append(right_lane_feat)
+        lanes = np.asarray(lanes)
+        # sample['lanes'] = torch.tensor(lanes, dtype=torch.float32)
         return sample           
