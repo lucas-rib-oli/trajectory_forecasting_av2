@@ -23,7 +23,6 @@ data = dict(
 model = dict(
     type='TransTraj',
     pose_dim = 6, # features dim [x, y, ...]
-    history_size = 8,
     future_size = 60, # Output trajectory size || 12 output poses
     num_queries = 1, # Number of trajectories of a target || K = 6
     dec_out_size = 2*60, # 6 * 12

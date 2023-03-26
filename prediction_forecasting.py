@@ -48,7 +48,6 @@ class TransformerPrediction ():
         self.num_queries = model_config['num_queries']
         self.pose_dim = model_config['pose_dim']
         self.dec_out_size = model_config['dec_out_size']
-        self.history_size = model_config['history_size']
         self.future_size = model_config['future_size']
         
         train_config = cfg.get('train')
