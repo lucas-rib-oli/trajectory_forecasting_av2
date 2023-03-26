@@ -301,7 +301,6 @@ class TransformerTrain ():
             exit(0)
 # ===================================================================================== #
 def main ():
-    
     # Read the config
     cfg = Config.fromfile(args.path_2_configuration)
     
