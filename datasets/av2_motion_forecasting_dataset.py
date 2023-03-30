@@ -25,35 +25,11 @@ _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.CONSTRUCTION,
     ObjectType.RIDERLESS_BICYCLE,
 }
-# Lane class dict
-lane_marktype_dict = {
-    "DASH_SOLID_YELLOW": 1,
-    "DASH_SOLID_WHITE": 2,
-    "DASHED_WHITE": 3,
-    "DASHED_YELLOW": 4,
-    "DOUBLE_SOLID_YELLOW": 5,
-    "DOUBLE_SOLID_WHITE": 6,
-    "DOUBLE_DASH_YELLOW": 7,
-    "DOUBLE_DASH_WHITE": 8,
-    "SOLID_YELLOW": 9,
-    "SOLID_WHITE": 10,
-    "SOLID_DASH_WHITE": 11,
-    "SOLID_DASH_YELLOW": 12,
-    "SOLID_BLUE": 13,
-    "NONE": 14,
-    "UNKNOWN": 15
-}
 # ===================================================================================== #
 class Av2MotionForecastingDataset (Dataset):
     """ PyTorch Dataset """
     def __init__(self, dataset_dir: str, split: str = "train", output_traj_size: int = 8, 
                  name_pickle: str = 'scored'):
-        
-        self.src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-        self.tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-        self.src_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
-        self.tgt_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
-        # ----------------------------------------------------------------------- #
         # Check if exists processed trajectories 
         self.path_2_traj = os.path.join('pickle_data/', split + '_trajectory_data_' + name_pickle + '.pickle')
         self.path_2_map = os.path.join('pickle_data/', split + '_map_data_' + name_pickle + '.pickle')
@@ -117,13 +93,13 @@ class Av2MotionForecastingDataset (Dataset):
         for lane_data in scene_lane_data:
             shape_vector = lane_data['left_lane_boundary'].shape
             is_intersection_v = np.repeat (int(lane_data['is_intersection']), shape_vector[0]).reshape(shape_vector[0], 1)
-            left_mark_type_v = np.repeat (lane_marktype_dict[lane_data['left_mark_type']], shape_vector[0]).reshape(shape_vector[0], 1)
-            right_mark_type_v = np.repeat (lane_marktype_dict[lane_data['right_mark_type']], shape_vector[0]).reshape(shape_vector[0], 1)
+            left_mark_type_v = np.repeat (lane_data['left_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
+            right_mark_type_v = np.repeat (lane_data['right_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
             id_v = np.repeat (lane_data['ID'], shape_vector[0]).reshape(shape_vector[0], 1)
             left_lane_feat = np.hstack ((lane_data['left_lane_boundary'], is_intersection_v, left_mark_type_v, id_v))
             right_lane_feat = np.hstack ((lane_data['right_lane_boundary'], is_intersection_v, right_mark_type_v, id_v))
             lanes.append(left_lane_feat)
             lanes.append(right_lane_feat)
         lanes = np.asarray(lanes)
-        # sample['lanes'] = torch.tensor(lanes, dtype=torch.float32)
-        return sample           
+        sample['lanes'] = torch.tensor(lanes, dtype=torch.float32)
+        return sample
