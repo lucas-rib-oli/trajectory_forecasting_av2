@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import math
 from typing import Optional, Any, Union, Callable
-from model import TransformerEncoder, TransformerDecoder, TransformerEncoderLayer, TransformerDecoderLayer
+from model import TransformerEncoder, TransformerDecoder, TransformerEncoderLayer, TransformerDecoderLayer, MLP, LaneNet
 
 class TransTraj (nn.Module):
     """Transformer with a linear embedding
@@ -12,6 +12,7 @@ class TransTraj (nn.Module):
         nn (_type_): _description_
     """
     def __init__(self, pose_dim: int, dec_out_size: int, num_queries: int,
+                 lane_channels: int, subgraph_width: int, num_subgraph_layers: int,
                  future_size: int = 60,
                  d_model = 512, nhead = 8, N = 6, dim_feedforward = 2048, dropout=0.1):
         """_summary_
@@ -27,21 +28,31 @@ class TransTraj (nn.Module):
             dim_feedforward (int, optional): dimension of the feedforward network model in nn.TransformerEncoder. Defaults to 2048.
             dropout (float, optional): Dropout probability. Defaults to 0.1.
         """
-        
+        # ----------------------------------------------------------------------- #
         super().__init__()
         self.model_type = 'Transformer'
         self.future_size = future_size
         self.d_model = d_model
         self.pose_dim = pose_dim
+        self.dec_out_size = dec_out_size
+        # ----------------------------------------------------------------------- #
         self.enc_linear_embedding = LinearEmbedding(pose_dim, d_model)
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        
         self.pos_decoder = PositionalEncoding(d_model, dropout)
-        
-        self.dec_out_size = dec_out_size
+        # ----------------------------------------------------------------------- #
+        # VectorNet Subgraph
+        self.subgraph = LaneNet(lane_channels, subgraph_width, num_subgraph_layers)
+        self.lanes_emb = LinearEmbedding(subgraph_width*2, d_model)
+        lane_enc_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
+                                                    batch_first=True)
+        lane_dec_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
+                                                    batch_first=True)
+        self.lane_encoder = nn.TransformerEncoder(encoder_layer=lane_enc_layer, num_layers=N)
+        self.lane_decoder = nn.TransformerDecoder(decoder_layer=lane_dec_layer, num_layers=N)
+        # ----------------------------------------------------------------------- #
         # Use the vanilla Tranformer Encoder Layer
         encoder_layer = nn.TransformerEncoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                 batch_first=True)
+                                                    batch_first=True)
         decoder_layer = TransformerDecoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, 
                                                  batch_first=True)
 
@@ -61,8 +72,10 @@ class TransTraj (nn.Module):
                        nn.Linear(d_model, d_model*2, bias=True),
                        nn.LayerNorm(d_model*2),
                        nn.ReLU(),
+                       nn.Dropout(dropout),
                        nn.Linear(d_model*2, d_model, bias=True),
-                       nn.Linear(d_model, dec_out_size, bias=True)) # Dim_features (x,y ..) * N Frames futuros --> view (60, pose_dim (2 or 6))
+                       nn.Linear(d_model, dec_out_size, bias=True), # Dim_features (x,y ..) * N Frames futuros --> view (60, pose_dim (2 or 6))
+                       nn.Dropout(dropout)) 
         
         self.cls_FFN = PointerwiseFeedforward(d_model, 2*d_model, dropout=dropout)
         self.classification_layer = nn.Sequential(
@@ -81,24 +94,50 @@ class TransTraj (nn.Module):
         self.query_embed = nn.Embedding(self.num_queries, d_model)
         # self.query_embed.weight.requires_grad == False
         nn.init.orthogonal_(self.query_embed.weight)
+    
+    def process_lanes (self, lanes: torch.Tensor):
+        # Get the lanes in vectorized form ( VectorNet: v = [dsi , dei , ai, j] )
+        lane_v = torch.cat (([lanes[:, :, :-1, :2], lanes[:, :, 1:, :2], lanes[:, :, 1:, 2:]]), dim=-1)
+        # Process the lanes to get the features
+        lane_feature: torch.Tensor = self.subgraph(lane_v)
+        return lane_feature
         
-        
-    def forward(self, src: torch.Tensor, tgt: torch.Tensor, src_mask: torch.Tensor, tgt_mask: torch.Tensor, 
+    def forward(self, historic_traj: torch.Tensor, future_traj: torch.Tensor, lanes: torch.Tensor, src_mask: torch.Tensor, tgt_mask: torch.Tensor, 
                 src_padding_mask: Optional[torch.Tensor] = None, tgt_padding_mask: Optional[torch.Tensor] = None):
+        """_summary_
+
+        Args:
+            historic_traj (torch.Tensor): Historical trajectories [bs, 50, num_features]
+            future_traj (torch.Tensor): Future trajectories [bs, 60, num_features]
+            lanes (torch.Tensor): Polylines of lanes [bs, max_lanes_num, num_lines, lane_features]
+            src_mask (torch.Tensor): _description_
+            tgt_mask (torch.Tensor): _description_
+            src_padding_mask (Optional[torch.Tensor], optional): _description_. Defaults to None.
+            tgt_padding_mask (Optional[torch.Tensor], optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         # Apply linear embedding with the positional encoding
-        src = self.enc_linear_embedding(src)
-        src = self.pos_encoder(src)
+        historic_traj = self.enc_linear_embedding(historic_traj)
+        historic_traj = self.pos_encoder(historic_traj)
         # tgt = self.dec_linear_embedding(tgt)
         # tgt = self.pos_decoder(tgt)
         
-        self.query_batches = self.query_embed.weight.view(1, *self.query_embed.weight.shape).repeat(tgt.shape[0], 1, 1)
+        self.query_batches = self.query_embed.weight.view(1, *self.query_embed.weight.shape).repeat(future_traj.shape[0], 1, 1)
         
-        memory = self.encoder(src) # [bs, N history, Features]
-        out = self.decoder (self.query_batches, memory) # [bs, N history, Features]
-        
+        memory_traj = self.encoder(historic_traj) # [bs, N history, Features]
+        out_traj = self.decoder (self.query_batches, memory_traj) # [bs, N history, Features]
+        # ----------------------------------------------------------------------- #
+        # Lane step
+        lanes_enc = self.process_lanes(lanes=lanes)
+        lanes_enc = self.lanes_emb(lanes_enc)
+        lanes_mem = self.lane_encoder(lanes_enc)
+        out = self.lane_decoder(out_traj, lanes_mem)
+        # ----------------------------------------------------------------------- #
         # Get the output i the expected dimensions
         pred: torch.Tensor = self.reg_mlp(out)
-        bs = src.shape[0]
+        bs = historic_traj.shape[0]
         num_traj = pred.shape[1]
         
         pred = pred.view(bs, num_traj, -1, 2) # [bs, N traj, Traj size, out feats(x, y, ...)]
@@ -152,31 +191,6 @@ class LinearEmbedding(nn.Module):
 
     def forward(self, x):
         return self.lut(x) * np.sqrt(self.d_model)
-
-class MLP(nn.Module):
-    """Multilayer perceptron
-
-    Args:
-        nn (_type_): _description_
-    """
-    def __init__(self, in_channels, hidden_unit, verbose=False):
-        super(MLP, self).__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(in_channels, hidden_unit, bias=True),
-            nn.LayerNorm(hidden_unit),
-            nn.GELU(),
-            nn.Linear(hidden_unit, hidden_unit, bias=True)
-        )
-
-    def forward(self, x):
-        x = self.mlp(x)
-        return x
-
-def generate_square_subsequent_mask(sz: int) -> torch.Tensor:
-    """Generates an upper-triangular matrix of -inf, with zeros on diag."""
-    mask = (torch.triu(torch.ones((sz, sz))) == 1).transpose(0, 1)
-    mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-    return mask
 
 class PointerwiseFeedforward(nn.Module):
     """
