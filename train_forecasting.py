@@ -3,7 +3,7 @@ import argparse
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from av2_motion_forecasting_dataset import Av2MotionForecastingDataset
+from datasets import Av2MotionForecastingDataset, collate_fn
 from tqdm import tqdm
 from colorama import Fore
 import json
@@ -50,6 +50,9 @@ class TransformerTrain ():
         self.pose_dim = model_config['pose_dim']
         self.dec_out_size = model_config['dec_out_size']
         self.future_size = model_config['future_size']
+        self.subgraph_width = model_config['subgraph_width']
+        self.num_subgraph_layers = model_config['num_subgraph_layers']
+        self.lane_channels = model_config['lane_channels']
         
         train_config = cfg.get('train')
         self.device = train_config['device']
@@ -67,8 +70,6 @@ class TransformerTrain ():
         config_data = cfg.get('data')
         self.save_path = 'models_weights/'
         self.name_pickle = config_data['name_pickle']
-        self.load_pickle = config_data ['load_pickle']
-        self.save_pickle = config_data['save_pickle']
         
         self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ----------------------------------------------------------------------- #
@@ -80,20 +81,19 @@ class TransformerTrain ():
         # ----------------------------------------------------------------------- #
         # Datos para entrenamiento
         self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', output_traj_size=self.future_size, 
-                                                       name_pickle=self.name_pickle, 
-                                                       load_pickle=self.load_pickle, save_pickle=self.save_pickle)
-        self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
+                                                       name_pickle=self.name_pickle)
+        self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, collate_fn=collate_fn)
         # Datos para validación 
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
-                                                     name_pickle=self.name_pickle,
-                                                     load_pickle=self.load_pickle, save_pickle=self.save_pickle)
-        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
+                                                     name_pickle=self.name_pickle)
+        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, collate_fn=collate_fn)
 
         print (Fore.CYAN + 'Number of training sequences: ' + Fore.WHITE + str(len(self.train_data)) + Fore.RESET)
         print (Fore.CYAN + 'Number of validation sequences: ' + Fore.WHITE + str(len(self.val_data)) + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Get the model
         self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+                                subgraph_width=self.subgraph_width, num_subgraph_layers=self.num_subgraph_layers, lane_channels=self.lane_channels,
                                 future_size=self.future_size,
                                 d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # Get the optimizer
@@ -154,25 +154,29 @@ class TransformerTrain ():
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
                 # Get the data from the dataloader
-                src: torch.Tensor = data['src']
-                tgt: torch.Tensor = data['tgt']
-                offset_tgt: torch.Tensor = data['offset_tgt']
-                src = src.to(self.device) # (bs, sequence length, feature number)
-                tgt = tgt.to(self.device)
-                offset_tgt = offset_tgt.to(self.device)
+                historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
+                future_traj: torch.Tensor = data['future']
+                offset_future_traj: torch.Tensor = data['offset_future']
+                lanes: torch.Tensor = data['lanes']
+                
+                # Pass to device
+                historic_traj = historic_traj.to(self.device) 
+                future_traj = future_traj.to(self.device)
+                offset_future_traj = offset_future_traj.to(self.device)
+                lanes = lanes.to(self.device)
                 
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
                 # dec_input = torch.cat((start_tensor, tgt), 1).to(self.device)
                 # dec_input = tgt
-                
+                # ----------------------------------------------------------------------- #
                 # Generate a square mask for the sequence
-                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(src, tgt)
-                   
+                # src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
+                # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (src, tgt, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, tgt, offset_tgt)
+                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
@@ -219,12 +223,15 @@ class TransformerTrain ():
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
-                src: torch.Tensor = data['src']
-                tgt: torch.Tensor = data['tgt']
-                offset_tgt: torch.Tensor = data['offset_tgt']
-                src = src.to(self.device) # (bs, sequence length, feature number)
-                tgt = tgt.to(self.device)
-                offset_tgt = offset_tgt.to(self.device)
+                historic_traj: torch.Tensor = data['historic']
+                future_traj: torch.Tensor = data['future']
+                offset_future_traj: torch.Tensor = data['offset_future']
+                lanes: torch.Tensor = data['lanes']
+                # Pass to device
+                historic_traj = historic_traj.to(self.device) 
+                future_traj = future_traj.to(self.device)
+                offset_future_traj = offset_future_traj.to(self.device)
+                lanes = lanes.to(self.device)
                 
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
@@ -232,12 +239,12 @@ class TransformerTrain ():
                 # dec_input = tgt
                 
                 # Generate a square mask for the sequence
-                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(src, tgt)
+                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                    
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (src, tgt, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, tgt, offset_tgt)
+                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 validation_losses.append(loss.detach().cpu().numpy())            
         # save checkpoint model
         self.save_model('check')
