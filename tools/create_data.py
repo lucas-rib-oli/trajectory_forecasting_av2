@@ -13,6 +13,7 @@ from av2.datasets.motion_forecasting import scenario_serialization, data_schema
 from av2.datasets.motion_forecasting.data_schema import ArgoverseScenario, ObjectType
 from av2.map.map_api import ArgoverseStaticMap
 from av2.utils.typing import NDArrayFloat, NDArrayInt
+from av2.geometry.interpolate import interp_arc
 # ===================================================================================== #
 parser = argparse.ArgumentParser(description='Data converter arg parser')
 parser.add_argument('dataset', metavar='av2', help='name of the dataset')
@@ -24,7 +25,7 @@ parser.add_argument(
 parser.add_argument(
     '--output_filename',
     type=str,
-    default='target',
+    default='target_simplified',
     help='Filename of the data')
 
 args = parser.parse_args()
@@ -33,11 +34,31 @@ args = parser.parse_args()
 _OBS_DURATION_TIMESTEPS: Final[int] = 50 # The first 5 s of each scenario is denoted as the observed window
 _PRED_DURATION_TIMESTEPS: Final[int] = 60 # The subsequent 6 s is denoted as the forecasted/predicted horizon.
 _TOTAL_DURATION_TIMESTEPS: Final[int] = 110
+NUM_CENTERLINE_INTERP_PTS: Final[int] = 10 # Polyline size
 _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.STATIC,
     ObjectType.BACKGROUND,
     ObjectType.CONSTRUCTION,
     ObjectType.RIDERLESS_BICYCLE,
+}
+
+# Lane class dict
+LANE_MARKTYPE_DICT = {
+    "DASH_SOLID_YELLOW": 1,
+    "DASH_SOLID_WHITE": 2,
+    "DASHED_WHITE": 3,
+    "DASHED_YELLOW": 4,
+    "DOUBLE_SOLID_YELLOW": 5,
+    "DOUBLE_SOLID_WHITE": 6,
+    "DOUBLE_DASH_YELLOW": 7,
+    "DOUBLE_DASH_WHITE": 8,
+    "SOLID_YELLOW": 9,
+    "SOLID_WHITE": 10,
+    "SOLID_DASH_WHITE": 11,
+    "SOLID_DASH_YELLOW": 12,
+    "SOLID_BLUE": 13,
+    "NONE": 14,
+    "UNKNOWN": 15
 }
 # ===================================================================================== #
 def prepare_data_av2(split: str):
@@ -123,20 +144,29 @@ def prepare_data_av2(split: str):
                                    [          0,            0, 1, 0],
                                    [          0,            0, 0, 1]])
             
+            
             # Transform the lane polylines
             scene_lanes_data: List[Dict] = []
-            for lane_segment in static_map.vector_lane_segments.values():
+            for id, lane_segment in static_map.vector_lane_segments.items():
                 left_lane_boundary = lane_segment.left_lane_boundary.xyz
                 right_lane_boundary = lane_segment.right_lane_boundary.xyz
                 
+                # centerline = static_map.get_lane_segment_centerline(id)
+                
                 left_lane_boundary = np.append(left_lane_boundary, np.ones((left_lane_boundary.shape[0], 1)), axis=1)
                 right_lane_boundary = np.append(right_lane_boundary, np.ones((right_lane_boundary.shape[0], 1)), axis=1)
+                # centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
                 # Substract the center
                 left_lane_boundary = left_lane_boundary - np.append (focal_coordinate, [0, 0])
                 right_lane_boundary = right_lane_boundary - np.append (focal_coordinate, [0, 0])
+                # centerline = centerline - np.append (focal_coordinate, [0, 0])
                 # Rotate
                 left_lane_boundary = np.dot(rot_matrix, left_lane_boundary.T).T
                 right_lane_boundary = np.dot(rot_matrix, right_lane_boundary.T).T
+                # centerline = np.dot(rot_matrix, centerline.T).T
+                # Interpolate data to get all lines with the same size
+                left_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=left_lane_boundary[:, :3])
+                right_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=right_lane_boundary[:, :3])
                 
                 # save the data
                 lane_data = {"ID": lane_segment.id,
@@ -144,10 +174,10 @@ def prepare_data_av2(split: str):
                              "right_lane_boundary": right_lane_boundary,
                              "is_intersection": lane_segment.is_intersection,
                              "lane_type": lane_segment.lane_type,
-                             "left_mark_type": lane_segment.left_mark_type,
-                             "right_mark_type": lane_segment.right_mark_type,
-                             "right_neighbor_id": lane_segment.right_neighbor_id,
-                             "left_neighbor_id": lane_segment.left_neighbor_id
+                             "left_mark_type": LANE_MARKTYPE_DICT[lane_segment.left_mark_type],
+                             "right_mark_type": LANE_MARKTYPE_DICT[lane_segment.right_mark_type]
+                            #  "right_neighbor_id": lane_segment.right_neighbor_id,
+                            #  "left_neighbor_id": lane_segment.left_neighbor_id
                             }
                 scene_lanes_data.append(lane_data)
             
@@ -236,8 +266,11 @@ def prepare_data_av2(split: str):
             # Plot
             # for lane_data in scene_lanes_data:
             #     polylines = [lane_data['left_lane_boundary'], lane_data['right_lane_boundary']]
+            #     centerlines = lane_data['centerline']
+                
             #     for polyline in polylines:
-            #         plt.plot(polyline[:, 0], polyline[:, 1], "-", linewidth=1.0, color='r', alpha=1.0)
+            #         plt.plot(polyline[:, 0], polyline[:, 1], "-", linewidth=1.0, color=(0,0,0), alpha=1.0)
+            #     plt.plot(centerlines[:, 0], centerlines[:, 1], "-", linewidth=1.0, color='y', alpha=1.0)
             # for track_id in scene_src_actor_traj_id.keys():
             #     src_traj = scene_src_actor_traj_id[track_id]
             #     tgt_traj = scene_tgt_actor_traj_id[track_id]
@@ -260,9 +293,9 @@ def prepare_data_av2(split: str):
     path_2_save_traj = os.path.join('pickle_data/', split + '_trajectory_data_' + args.output_filename + '.pickle')
     path_2_save_map = os.path.join('pickle_data/', split + '_map_data_' + args.output_filename + '.pickle')
     with open(path_2_save_traj, 'wb') as f:
-        pickle.dump(all_traj_data, f)
+        pickle.dump(all_traj_data, f, pickle.HIGHEST_PROTOCOL)
     with open(path_2_save_map, 'wb') as f:
-        pickle.dump(all_map_data, f)
+        pickle.dump(all_map_data, f, pickle.HIGHEST_PROTOCOL)
 # ===================================================================================== #
 if __name__ == '__main__':
     if args.dataset == 'av2':
