@@ -66,11 +66,6 @@ def prepare_data_av2(split: str):
     argoverse_scenario_dir = Path(argoverse_scenario_dir)
     all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
     # ----------------------------------------------------------------------- #
-    src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-    tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
-    src_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
-    tgt_actor_offset_traj_id: Dict[str, npt.NDArray] = {}
-    all_scene_data = []
     all_traj_data = []
     all_map_data = []
     # ----------------------------------------------------------------------- #
@@ -86,12 +81,7 @@ def prepare_data_av2(split: str):
         # ----------------------------------------------------------------------- #
         raw_scene_src_actor_traj_id: Dict[str, npt.NDArray] = {}
         raw_scene_tgt_actor_traj_id: Dict[str, npt.NDArray] = {}
-        
         # Variables to store
-        scene_src_actor_traj_id: Dict[str, npt.NDArray] = {}
-        scene_tgt_actor_traj_id: Dict[str, npt.NDArray] = {}
-        scene_src_actor_offTraj_id: Dict[str, npt.NDArray] = {}
-        scene_tgt_actor_offTraj_id: Dict[str, npt.NDArray] = {}
         scene_data = {}
         # ----------------------------------------------------------------------- #
         # Get trajectories
@@ -237,16 +227,6 @@ def prepare_data_av2(split: str):
                 src_actor_offset = np.vstack((src_agent_coordinate_tf[0], src_agent_coordinate_tf[1:] - src_agent_coordinate_tf[:-1]))
                 tgt_actor_offset = np.vstack((tgt_agent_coordinate_tf[0], tgt_agent_coordinate_tf[1:] - tgt_agent_coordinate_tf[:-1]))
                 
-                # Save the scene trajectory
-                scene_src_actor_traj_id[track_id] = src_agent_coordinate_tf
-                scene_tgt_actor_traj_id[track_id] = tgt_agent_coordinate_tf
-                scene_src_actor_offTraj_id[track_id] = src_actor_offset
-                scene_tgt_actor_offTraj_id[track_id] = tgt_actor_offset
-                # Save the trajectories by ID
-                src_actor_trajectory_by_id[track_id] = src_agent_coordinate_tf
-                tgt_actor_trajectory_by_id[track_id] = tgt_agent_coordinate_tf
-                src_actor_offset_traj_id[track_id] = src_actor_offset
-                tgt_actor_offset_traj_id[track_id] = tgt_actor_offset
                 # Save the data
                 agent_data = { "ID": track_id,
                                "historic": src_agent_coordinate_tf,
