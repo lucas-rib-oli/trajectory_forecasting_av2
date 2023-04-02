@@ -49,9 +49,8 @@ class Av2MotionForecastingDataset (Dataset):
     """ PyTorch Dataset """
     def __init__(self, dataset_dir: str, split: str = "train", output_traj_size: int = 8, 
                  name_pickle: str = 'scored'):
-        # Check if exists processed trajectories 
-        self.path_2_scenes_data = os.path.join('pickle_data/', split + '_scenes_data_' + name_pickle + '.pickle')
-        
+        # Check if exists processed trajectories
+        self.path_2_scenes_data = os.path.join('pickle_data/', 'trajectories', split, 'data_' + name_pickle + '.pickle')
         # Read scenes data
         if os.path.exists(self.path_2_scenes_data):
             with open(self.path_2_scenes_data, 'rb') as f:
@@ -76,6 +75,7 @@ class Av2MotionForecastingDataset (Dataset):
         """
         sample = {}
         scene_traj_data = self.scenes_data[idx]['agents']
+        map_path = self.scenes_data[idx]['map_path']
         historic_trajectories = []
         future_trajectories = []
         historic_offset_trajectories = []
@@ -96,50 +96,21 @@ class Av2MotionForecastingDataset (Dataset):
         sample['future'] = torch.tensor(future_trajectories, dtype=torch.float32)
         sample['offset_historic'] = torch.tensor(historic_offset_trajectories, dtype=torch.float32)
         sample['offset_future'] = torch.tensor(future_offset_trajectories, dtype=torch.float32)
-        # Get focal agent data 
-        focal_agent_data = self.scenes_data[idx]['focal_agent']
-        focal_coordinate = focal_agent_data['focal_coordinate']
-        rot_matrix = focal_agent_data['focal_rot_matrix']
-        
-        # Process map data
-        static_map_path = self.scenes_data[idx]['map_path']
-        static_map = ArgoverseStaticMap.from_json(static_map_path)
-        scene_lanes_data: List[Dict] = []
         
         lanes = []
-        for id, lane_segment in static_map.vector_lane_segments.items():
-            left_lane_boundary = lane_segment.left_lane_boundary.xyz
-            right_lane_boundary = lane_segment.right_lane_boundary.xyz
+        with open(map_path, 'rb') as f:
+            scene_lane_data = pickle.load(f)
             
-            # centerline = static_map.get_lane_segment_centerline(id)
-            
-            left_lane_boundary = np.append(left_lane_boundary, np.ones((left_lane_boundary.shape[0], 1)), axis=1)
-            right_lane_boundary = np.append(right_lane_boundary, np.ones((right_lane_boundary.shape[0], 1)), axis=1)
-            # centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
-            # Substract the center
-            left_lane_boundary = left_lane_boundary - np.append (focal_coordinate, [0, 0])
-            right_lane_boundary = right_lane_boundary - np.append (focal_coordinate, [0, 0])
-            # centerline = centerline - np.append (focal_coordinate, [0, 0])
-            # Rotate
-            left_lane_boundary = np.dot(rot_matrix, left_lane_boundary.T).T
-            right_lane_boundary = np.dot(rot_matrix, right_lane_boundary.T).T
-            # centerline = np.dot(rot_matrix, centerline.T).T
-            # Interpolate data to get all lines with the same size
-            left_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=left_lane_boundary[:, :3])
-            right_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=right_lane_boundary[:, :3])
-            
-            shape_vector = left_lane_boundary.shape
-            is_intersection_v = np.repeat (int(lane_segment.is_intersection), shape_vector[0]).reshape(shape_vector[0], 1)
-            
-            left_mark_type_v = np.repeat (LANE_MARKTYPE_DICT[lane_segment.left_mark_type], shape_vector[0]).reshape(shape_vector[0], 1)
-            right_mark_type_v = np.repeat (LANE_MARKTYPE_DICT[lane_segment.right_mark_type], shape_vector[0]).reshape(shape_vector[0], 1)
-            
-            id_v = np.repeat (lane_segment.id, shape_vector[0]).reshape(shape_vector[0], 1)
-            
-            left_lane_feat = np.hstack ((left_lane_boundary, is_intersection_v, left_mark_type_v, id_v))
-            right_lane_feat = np.hstack ((right_lane_boundary, is_intersection_v, right_mark_type_v, id_v))
-            
+        for lane_data in scene_lane_data:
+            shape_vector = lane_data['left_lane_boundary'].shape
+            is_intersection_v = np.repeat (int(lane_data['is_intersection']), shape_vector[0]).reshape(shape_vector[0], 1)
+            left_mark_type_v = np.repeat (lane_data['left_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
+            right_mark_type_v = np.repeat (lane_data['right_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
+            id_v = np.repeat (lane_data['ID'], shape_vector[0]).reshape(shape_vector[0], 1)
+            left_lane_feat = np.hstack ((lane_data['left_lane_boundary'], is_intersection_v, left_mark_type_v, id_v))
+            right_lane_feat = np.hstack ((lane_data['right_lane_boundary'], is_intersection_v, right_mark_type_v, id_v))
             lanes.append(left_lane_feat)
             lanes.append(right_lane_feat)
+        lanes = np.asarray(lanes)
         sample['lanes'] = torch.tensor(lanes, dtype=torch.float32)
         return sample

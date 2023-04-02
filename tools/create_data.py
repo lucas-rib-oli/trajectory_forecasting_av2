@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 import os
+import os
 import pickle
 from typing import Final, List, Optional, Sequence, Set, Tuple, Dict
 import numpy as np
@@ -76,7 +77,7 @@ def prepare_data_av2(split: str):
         except:
             print(Fore.RED + 'Fail to read: ' + Fore.RESET, scenario_path)
             return
-        # static_map = ArgoverseStaticMap.from_json(static_map_path)
+        static_map = ArgoverseStaticMap.from_json(static_map_path)
         # ----------------------------------------------------------------------- #
         raw_scene_src_actor_traj_id: Dict[str, npt.NDArray] = {}
         raw_scene_tgt_actor_traj_id: Dict[str, npt.NDArray] = {}
@@ -132,7 +133,43 @@ def prepare_data_av2(split: str):
                                    [sin_heading,  cos_heading, 0, 0],
                                    [          0,            0, 1, 0],
                                    [          0,            0, 0, 1]])
-            
+            # ----------------------------------------------------------------------- #
+            # Transform the lane polylines
+            scene_lanes_data: List[Dict] = []
+            for id, lane_segment in static_map.vector_lane_segments.items():
+                left_lane_boundary = lane_segment.left_lane_boundary.xyz
+                right_lane_boundary = lane_segment.right_lane_boundary.xyz
+                
+                # centerline = static_map.get_lane_segment_centerline(id)
+                
+                left_lane_boundary = np.append(left_lane_boundary, np.ones((left_lane_boundary.shape[0], 1)), axis=1)
+                right_lane_boundary = np.append(right_lane_boundary, np.ones((right_lane_boundary.shape[0], 1)), axis=1)
+                # centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
+                # Substract the center
+                left_lane_boundary = left_lane_boundary - np.append (focal_coordinate, [0, 0])
+                right_lane_boundary = right_lane_boundary - np.append (focal_coordinate, [0, 0])
+                # centerline = centerline - np.append (focal_coordinate, [0, 0])
+                # Rotate
+                left_lane_boundary = np.dot(rot_matrix, left_lane_boundary.T).T
+                right_lane_boundary = np.dot(rot_matrix, right_lane_boundary.T).T
+                # centerline = np.dot(rot_matrix, centerline.T).T
+                # Interpolate data to get all lines with the same size
+                left_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=left_lane_boundary[:, :3])
+                right_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=right_lane_boundary[:, :3])
+                
+                # save the data
+                lane_data = {"ID": lane_segment.id,
+                             "left_lane_boundary": left_lane_boundary,
+                             "right_lane_boundary": right_lane_boundary,
+                             "is_intersection": lane_segment.is_intersection,
+                             "lane_type": lane_segment.lane_type,
+                             "left_mark_type": LANE_MARKTYPE_DICT[lane_segment.left_mark_type],
+                             "right_mark_type": LANE_MARKTYPE_DICT[lane_segment.right_mark_type],
+                             "right_neighbor_id": lane_segment.right_neighbor_id,
+                             "left_neighbor_id": lane_segment.left_neighbor_id
+                            }
+                scene_lanes_data.append(lane_data)
+            # ----------------------------------------------------------------------- #
             scene_agents_data: List[Dict] = []
             # Transform all trajectories
             for track_id in raw_scene_tgt_actor_traj_id.keys():
@@ -197,14 +234,17 @@ def prepare_data_av2(split: str):
                                "offset_future": tgt_actor_offset
                              }
                 scene_agents_data.append (agent_data)
-            # Save the focal agent data
-            focal_agent_data = {}
-            focal_agent_data['focal_coordinate'] = focal_coordinate
-            focal_agent_data['focal_rot_matrix'] = rot_matrix
+            # ----------------------------------------------------------------------- #
+            # Save map data
+            path_2_save_scenes_map = Path (os.path.join('pickle_data/map/', split, static_map_path.parts[-2], static_map_path.parts[-1].replace('.json', '.pickle')))
+            if not path_2_save_scenes_map.parents[0].exists():
+                # Create directory
+                path_2_save_scenes_map.parents[0].mkdir(parents=True)
+            with open(str(path_2_save_scenes_map), 'wb') as f:
+                pickle.dump(scene_lanes_data, f, pickle.HIGHEST_PROTOCOL)
             # ----------------------------------------------------------------------- #
             scene_data['agents'] = scene_agents_data
-            scene_data['focal_agent'] = focal_agent_data
-            scene_data['map_path'] = static_map_path
+            scene_data['map_path'] = str(path_2_save_scenes_map)
             all_scene_data.append(scene_data)
             # ----------------------------------------------------------------------- #
             # Plot
@@ -232,8 +272,11 @@ def prepare_data_av2(split: str):
     # Print info
     print (Fore.CYAN + 'Size scene data: ' + Fore.WHITE + str(len(all_scene_data)) + Fore.RESET)
     # ----------------------------------------------------------------------- #
+    parent_path = Path (os.path.join('pickle_data/', 'trajectories', split))
+    if not parent_path.exists():
+        parent_path.mkdir(parents=True)
     # Save the data in a pickle
-    path_2_save_scenes = os.path.join('pickle_data/', split + '_scenes_data_' + args.output_filename + '.pickle')
+    path_2_save_scenes = os.path.join(str(parent_path), 'data_' + args.output_filename + '.pickle')
     with open(path_2_save_scenes, 'wb') as f:
         pickle.dump(all_scene_data, f, pickle.HIGHEST_PROTOCOL)
     print (Fore.CYAN + 'Data saved in: ' + Fore.WHITE + path_2_save_scenes + Fore.RESET)
