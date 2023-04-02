@@ -113,9 +113,9 @@ class TransformerTrain ():
         self.best_validation_loss = np.Inf
         # ----------------------------------------------------------------------- #
         # Metris
-        self.MR = MR().to(self.device)
-        self.minADE = minADE().to(self.device)
-        self.minFDE = minFDE().to(self.device)
+        self.MR = MR()
+        self.minADE = minADE()
+        self.minFDE = minFDE()
         # ----------------------------------------------------------------------- #
         if self.resume_train:
             self.load_checkpoint('check')
@@ -201,8 +201,8 @@ class TransformerTrain ():
                     print('-' * 89)
                     print (f'| epoch {self.epoch} | iteration {self.iteration} | [train] loss {np_loss} |')
                     self.tb_writer.add_scalar('Loss/train', self.last_train_loss, self.iteration)
-                
-            # calculate and print training statistics
+                    
+            # Calculate and print training statistics
             loss_epoch = np.mean(epoch_losses)
             print('=' * 89)
             print (f'| End epoch {self.epoch} | iteration {self.iteration} | [train] mean loss {loss_epoch} |')
@@ -225,6 +225,9 @@ class TransformerTrain ():
         self.model.eval()
         
         validation_losses = []
+        minADE_metrics = []
+        minFDE_metrics = []
+        mr_metrics = []
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
@@ -254,13 +257,12 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                gt_overdim: torch.Tensor = future_traj[:,:,:2].unsqueeze(1).repeat(1, pred.shape[1], 1, 1)
-                fde = torch.norm(pred[:,:, -1] - gt_overdim[:,:, -1], p=2, dim=-1)
-                index_fde_agents = fde.argmin(dim=-1)
-                best_fde_agents = torch.gather(input=pred, dim=1, index=index_fde_agents.view(pred.shape[0], 1, 1, 1).repeat(1, 1, 60, 2)).squeeze(1)
-                self.minADE.update(best_fde_agents, future_traj)
-                self.minFDE.update(best_fde_agents, future_traj)
-                self.MR.update(best_fde_agents, future_traj)
+                min_ade = self.minADE.compute(pred, future_traj[:,:,:2])
+                min_fde = self.minFDE.compute(pred, future_traj[:,:,:2])
+                mr_loss = self.MR.compute(pred, future_traj[:,:,:2])
+                minADE_metrics.append (min_ade.detach().cpu().numpy())
+                minFDE_metrics.append (min_fde.detach().cpu().numpy())
+                mr_metrics.append (mr_loss.detach().cpu().numpy())
                 
         # save checkpoint model
         self.save_model('check')
@@ -281,9 +283,9 @@ class TransformerTrain ():
         print(Fore.GREEN + '=' * 89 + Fore.RESET)
         # Write in tensorboard
         self.tb_writer.add_scalar('Loss epoch/validation', self.last_validation_loss, self.epoch)
-        self.tb_writer.add_scalar('minADE epoch/validation', self.minADE.compute(), self.epoch)
-        self.tb_writer.add_scalar('minFDE epoch/validation', self.minFDE.compute(), self.epoch)
-        self.tb_writer.add_scalar('MR epoch/validation', self.MR.compute(), self.epoch)
+        self.tb_writer.add_scalar('minADE epoch/validation', np.mean(minADE_metrics), self.epoch)
+        self.tb_writer.add_scalar('minFDE epoch/validation', np.mean(minFDE_metrics), self.epoch)
+        self.tb_writer.add_scalar('MR epoch/validation', np.mean(mr_metrics), self.epoch)
         
         
     # ===================================================================================== #
