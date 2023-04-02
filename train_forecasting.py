@@ -14,7 +14,7 @@ from model.transtraj import TransTraj
 from model.NoamOpt import NoamOpt
 from pathlib import Path
 from configs import Config
-from loss import TransLoss
+from losses import ClosestL2Loss
 from metrics import minADE, minFDE, MR
 # ===================================================================================== #
 def str_to_bool(value):
@@ -106,8 +106,8 @@ class TransformerTrain ():
         
         # Initialize the loss function
         # self.loss_fn = nn.HuberLoss(reduction='mean')
-        self.loss_fn = TransLoss()
-
+        self.loss_fn = ClosestL2Loss()
+        # ----------------------------------------------------------------------- #
         self.last_train_loss = np.Inf
         self.last_validation_loss = np.Inf
         self.best_validation_loss = np.Inf

@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 
-class TransLoss (nn.Module):
+class ClosestL2Loss (nn.Module):
     def __init__(self, reduction: str = 'sum') -> None:
         super().__init__()
         
@@ -69,8 +69,6 @@ class TransLoss (nn.Module):
         cls_los = self.class_loss_fn(pred_scores, one_hot_vector)
         # ----------------------------------------------------------------------- #        
         # Compute regresion loss
-        # pred_trajs_offset = torch.vstack((pred_trajs[:,:,0,:].unsqueeze(2), pred_trajs[:,:,1:,:] - pred_trajs[:,:,:-1,:]))
-        # pred_trajs_offset = torch.cat((pred_trajs[:,:,0,:].unsqueeze(2), pred_trajs[:,:,1:,:] - pred_trajs[:,:,:-1,:]), dim=2)
         # Get the loss with respect the best prediction
         reg_loss = self.closest_trajectory_loss(pred_trajs[:,:,:,:2], gt_overdim[:,:,:,:2])
         
