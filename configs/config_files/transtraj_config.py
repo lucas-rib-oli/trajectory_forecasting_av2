@@ -16,6 +16,8 @@ optimizer = dict(
 
 data = dict(  
     name_pickle = "target_simplified",
+    path_2_save_weights = 'models_weights/map_implementation/',
+    tensorboard_path = 'tensorboard/map_implementation',
 )
 
 model = dict(

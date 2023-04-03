@@ -88,9 +88,8 @@ class TransformerPrediction ():
         self.resume_train = train_config['resume_train']
         
         config_data = cfg.get('data')
-        self.save_path = 'models_weights/'
-                
-        self.save_path = 'models_weights/'
+        self.save_path = config_data['path_2_save_weights']
+
         self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ---------------------------------------------------------------------------------------------------- #
         # Get the model
