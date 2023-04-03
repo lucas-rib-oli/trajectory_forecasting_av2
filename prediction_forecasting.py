@@ -115,7 +115,7 @@ class TransformerPrediction ():
         argoverse_scenario_dir = os.path.join(args.root_path, 'motion_forecasting', split)
         argoverse_scenario_dir = Path(argoverse_scenario_dir)
         all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
-        all_scenario_files = all_scenario_files[600:620]
+        all_scenario_files = all_scenario_files[621:650]
         # ----------------------------------------------------------------------- #
         src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
