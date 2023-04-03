@@ -164,7 +164,7 @@ class TransformerTrain ():
                 
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj.to(self.device)
+                future_traj = future_traj[:,:,:2].to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
                 
@@ -235,7 +235,7 @@ class TransformerTrain ():
                 lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1) # Delete Z-coordinate and ID
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj.to(self.device)
+                future_traj = future_traj[:,:,:2].to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
                 
