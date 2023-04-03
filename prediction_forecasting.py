@@ -55,6 +55,8 @@ def str_to_bool(value):
     elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
         return True
 parser = argparse.ArgumentParser()
+parser.add_argument('save_figs', type=str_to_bool, default=False, help='Allow to save the plots')
+parser.add_argument('--path_2_save_figs', type=str, default='/home/lribeiro/TFM/resultados/03.04.2023', help='Path where the plots will be stored')
 parser.add_argument(
     '--root-path',
     type=str,
@@ -390,7 +392,7 @@ class TransformerPrediction ():
                 historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
                 future_traj: torch.Tensor = data['future']
                 offset_future_traj: torch.Tensor = data['offset_future']
-                lanes: torch.Tensor = data['lanes']
+                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1)
                 
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
@@ -403,21 +405,37 @@ class TransformerPrediction ():
                 # Output model
                                 # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None)
-                
+                index_with_highest_conf = torch.argmax(conf, dim=-1)
+                if args.save_figs:
+                    plt.figure(figsize=(20,11))
                 plt.plot (historic_traj[0,:,0].cpu().numpy(), historic_traj[0,:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical')
                 for k in range(self.num_queries):
-                    color = (1,0,0)
-                    plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label='prediction')
-                plt.plot (future_traj[0,:,0].cpu().numpy(), future_traj[0,:,1].cpu().numpy(), '--o', color=(0,1,0), label='GT')
+                    if k != index_with_highest_conf[0]:
+                        color = (0.3, 0.3, 0.3, 0.2)
+                        label = 'other prediction'
+                        plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label=label)
+                # Plot best prediction
+                color = (1,1,0)
+                label = 'best prediction'
+                k = index_with_highest_conf[0]
+                plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label=label)
+                # Plot GT
+                plt.plot (future_traj[0,:,0].cpu().numpy(), future_traj[0,:,1].cpu().numpy(), '--o', color=(0,1,0, 0.6), label='Future GT')
                 
                 
                 for lane in lanes[0]:
                     lane_cpu = lane.cpu().numpy()
-                    plt.plot(lane_cpu[:, 0], lane_cpu[:, 1], "-", linewidth=1.0, color=(0,0,0), alpha=1.0) 
+                    plt.plot(lane_cpu[:, 0], lane_cpu[:, 1], "-", linewidth=1.0, color=(0,0,0), alpha=1.0)
                 plt.xlabel('X')
                 plt.ylabel('Y')
-                # plt.legend(loc="upper left")
-            plt.show()
+                plt.legend(loc="upper left")
+            if args.save_figs:
+                root_fig = os.path.join(args.path_2_save_figs, f'figure_{idx}.png')
+                plt.savefig(root_fig, format='png',dpi=96)
+            else:
+                plt.show()
+            plt.clf()
+            plt.close()
             # exit(0)
     # ---------------------------------------------------------------------------------------------------- #
     def compute_loss_val (self):
