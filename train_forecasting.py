@@ -187,11 +187,10 @@ class TransformerTrain ():
                 loss.backward()
                 self.optimizer.step()
                 # ----------------------------------------------------------------------- #
-                
                 # Add one iteration
                 self.iteration += 1
                 self.last_train_loss = loss
-
+                
                 np_loss = loss.detach().cpu().numpy()
                 self.last_train_loss = np.mean(np_loss)
                 epoch_losses.append(self.last_train_loss)
@@ -238,15 +237,10 @@ class TransformerTrain ():
                 future_traj = future_traj[:,:,:2].to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
-                
-                # 0, 0, 0 indicate the start of the sequence
-                # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
-                # dec_input = torch.cat((start_tensor, tgt), 1).to(self.device)
-                # dec_input = tgt
-                
+                # ----------------------------------------------------------------------- #
                 # Generate a square mask for the sequence
                 src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
-                   
+                # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
