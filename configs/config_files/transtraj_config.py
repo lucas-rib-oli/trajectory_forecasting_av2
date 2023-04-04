@@ -34,5 +34,5 @@ model = dict(
     # Subgraph
     subgraph_width = 32,
     num_subgraph_layers = 2,
-    lane_channels = 8
+    lane_channels = 6
 )
