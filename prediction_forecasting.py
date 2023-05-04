@@ -117,7 +117,7 @@ class TransformerPrediction ():
         argoverse_scenario_dir = os.path.join(args.root_path, 'motion_forecasting', split)
         argoverse_scenario_dir = Path(argoverse_scenario_dir)
         all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
-        all_scenario_files = all_scenario_files[621:650]
+        all_scenario_files = all_scenario_files[1:100]
         # ----------------------------------------------------------------------- #
         src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
@@ -153,10 +153,10 @@ class TransformerPrediction ():
                 if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                     continue
                 # Only get the 'FOCAL TACK' and 'SCORED CARS'
-                # if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
-                #     continue
-                if track.category != data_schema.TrackCategory.FOCAL_TRACK:
+                if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
                     continue
+                # if track.category != data_schema.TrackCategory.FOCAL_TRACK:
+                    # continue
                 
                 # Get timesteps for which actor data is valid
                 actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
@@ -193,9 +193,9 @@ class TransformerPrediction ():
                 tgt_ones_vector = np.ones((tgt_full_traj.shape[0], 1))
                 
                 rot_matrix = np.array([[cos_heading, -sin_heading, 0, 0],
-                                    [sin_heading,  cos_heading, 0, 0],
-                                    [          0,            0, 1, 0],
-                                    [          0,            0, 0, 1]])
+                                       [sin_heading,  cos_heading, 0, 0],
+                                       [          0,            0, 1, 0],
+                                       [          0,            0, 0, 1]])
                 
                 
                 # Transform the lane polylines
@@ -336,10 +336,10 @@ class TransformerPrediction ():
         historic_offset_trajectories = np.asarray(historic_offset_trajectories)
         future_offset_trajectories = np.asarray(future_offset_trajectories)
         
-        sample['historic'] = torch.tensor(historic_trajectories, dtype=torch.float32)
-        sample['future'] = torch.tensor(future_trajectories, dtype=torch.float32)
-        sample['offset_historic'] = torch.tensor(historic_offset_trajectories, dtype=torch.float32)
-        sample['offset_future'] = torch.tensor(future_offset_trajectories, dtype=torch.float32)
+        sample['historic'] = torch.tensor(historic_trajectories, dtype=torch.float32).unsqueeze(0)
+        sample['future'] = torch.tensor(future_trajectories, dtype=torch.float32).unsqueeze(0)
+        sample['offset_historic'] = torch.tensor(historic_offset_trajectories, dtype=torch.float32).unsqueeze(0)
+        sample['offset_future'] = torch.tensor(future_offset_trajectories, dtype=torch.float32).unsqueeze(0)
         
         lanes = []
         scene_lane_data = self.all_map_data[idx]
@@ -399,29 +399,42 @@ class TransformerPrediction ():
                 future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
-                
-                # Generate a square mask for the sequence
+                 # Generate a square mask for the sequence
                 # src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                 # Output model
                                 # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None)
-                index_with_highest_conf = torch.argmax(conf, dim=-1)
+                index_with_highest_conf = torch.argmax(conf, dim=-1)[0] # Omit Batch Size
                 if args.save_figs:
                     plt.figure(figsize=(20,11))
-                plt.plot (historic_traj[0,:,0].cpu().numpy(), historic_traj[0,:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical')
-                for k in range(self.num_queries):
-                    if k != index_with_highest_conf[0]:
-                        color = (0.3, 0.3, 0.3, 0.2)
-                        label = 'other prediction'
-                        plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label=label)
-                # Plot best prediction
-                color = (1,1,0)
-                label = 'best prediction'
-                k = index_with_highest_conf[0]
-                plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label=label)
+                for historic_traj in historic_traj[0]:
+                    plt.plot (historic_traj[:,0].cpu().numpy(), historic_traj[:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical')
+                for agent_idx, pred_trajs in enumerate(pred[0]):
+                    for traj_idx, pred_traj in enumerate(pred_trajs):
+                        # Check if we have the best prediction
+                        if traj_idx == index_with_highest_conf[agent_idx]:
+                            # Best prediction
+                            color = (1,1,0)
+                            label = 'best prediction'
+                            print (label)
+                        else:
+                            color = (0.3, 0.3, 0.3, 0.2)
+                            label = 'other prediction'
+                        plt.plot (pred_traj[:,0].cpu().numpy(), pred_traj[:,1].cpu().numpy(), '--o', color=color, label=label)
+                    
+                # for k in range(self.num_queries):
+                #     if k != index_with_highest_conf[0]:
+                #         color = (0.3, 0.3, 0.3, 0.2)
+                #         label = 'other prediction'
+                #         plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label=label)
+                # # Plot best prediction
+                # color = (1,1,0)
+                # label = 'best prediction'
+                # k = index_with_highest_conf[0]
+                # plt.plot (pred[0,k,:,0].cpu().numpy(), pred[0,k,:,1].cpu().numpy(), '--o', color=color, label=label)
                 # Plot GT
-                plt.plot (future_traj[0,:,0].cpu().numpy(), future_traj[0,:,1].cpu().numpy(), '--o', color=(0,1,0, 0.6), label='Future GT')
-                
+                for future_traj in future_traj[0]:
+                    plt.plot (future_traj[:,0].cpu().numpy(), future_traj[:,1].cpu().numpy(), '--o', color=(0,1,0, 0.6), label='Future GT')
                 
                 for lane in lanes[0]:
                     lane_cpu = lane.cpu().numpy()
