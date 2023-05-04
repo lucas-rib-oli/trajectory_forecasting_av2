@@ -1,8 +1,8 @@
 import torch
 from typing import List, Dict
 from torch.nn.utils.rnn import pad_sequence
-key_padding = ['lanes']
-key_concatenate = ['historic', 'future', 'offset_historic', 'offset_future']
+key_padding = ['lanes', 'historic', 'future', 'offset_historic', 'offset_future']
+key_concatenate = []
 
 def collate_fn (batch: List[Dict[str, torch.Tensor]]):
     keys = batch[0].keys()
