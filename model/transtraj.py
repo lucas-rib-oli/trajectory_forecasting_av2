@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 import numpy as np
 import math
 from typing import Optional, Any, Union, Callable
@@ -43,20 +44,22 @@ class TransTraj (nn.Module):
         # VectorNet Subgraph
         self.subgraph = LaneNet(lane_channels, subgraph_width, num_subgraph_layers)
         self.lanes_emb = LinearEmbedding(subgraph_width*2, d_model)
-        lane_enc_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
+        lane_enc_layer = TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
                                                     batch_first=True)
-        lane_dec_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                    batch_first=True)
-        self.lane_encoder = nn.TransformerEncoder(encoder_layer=lane_enc_layer, num_layers=N)
-        self.lane_decoder = nn.TransformerDecoder(decoder_layer=lane_dec_layer, num_layers=N)
+        lane_dec_layer = TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
+                                                 with_self_att=True,
+                                                 batch_first=True)
+        self.lane_encoder = TransformerEncoder(encoder_layer=lane_enc_layer, num_layers=N)
+        self.lane_decoder = TransformerDecoder(decoder_layer=lane_dec_layer, num_layers=N)
         # ----------------------------------------------------------------------- #
         # Use the vanilla Tranformer Encoder Layer
-        encoder_layer = nn.TransformerEncoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                    batch_first=True)
-        decoder_layer = TransformerDecoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, 
+        encoder_layer = TransformerEncoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
+                                                 batch_first=True)
+        decoder_layer = TransformerDecoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
+                                                 with_self_att=True,
                                                  batch_first=True)
 
-        self.encoder = nn.TransformerEncoder(encoder_layer=encoder_layer, num_layers=N)
+        self.encoder = TransformerEncoder(encoder_layer=encoder_layer, num_layers=N)
         self.decoder = TransformerDecoder(decoder_layer=decoder_layer, num_layers=N)
         
         
@@ -107,8 +110,8 @@ class TransTraj (nn.Module):
         """_summary_
 
         Args:
-            historic_traj (torch.Tensor): Historical trajectories [bs, 50, num_features]
-            future_traj (torch.Tensor): Future trajectories [bs, 60, num_features]
+            historic_traj (torch.Tensor): Historical trajectories [bs, A, 50, num_features]
+            future_traj (torch.Tensor): Future trajectories [bs, A, 60, num_features]
             lanes (torch.Tensor): Polylines of lanes [bs, max_lanes_num, num_lines, lane_features]
             src_mask (torch.Tensor): _description_
             tgt_mask (torch.Tensor): _description_
@@ -118,14 +121,19 @@ class TransTraj (nn.Module):
         Returns:
             _type_: _description_
         """
+        # Get dimensions
+        bs = historic_traj.shape[0]
+        num_agents = historic_traj.shape[1]
+        historic_timesteps = historic_traj.shape[2]
+        num_features = historic_traj.shape[3]
+        # ----------------------------------------------------------------------- #
         # Apply linear embedding with the positional encoding
-        historic_traj = self.enc_linear_embedding(historic_traj)
+        historic_traj = self.enc_linear_embedding(historic_traj)        
         historic_traj = self.pos_encoder(historic_traj)
         # tgt = self.dec_linear_embedding(tgt)
         # tgt = self.pos_decoder(tgt)
         
-        self.query_batches = self.query_embed.weight.view(1, *self.query_embed.weight.shape).repeat(future_traj.shape[0], 1, 1)
-        
+        self.query_batches = self.query_embed.weight.view(1, 1, *self.query_embed.weight.shape).repeat(bs, num_agents, 1, 1)
         memory_traj = self.encoder(historic_traj) # [bs, N history, Features]
         out_traj = self.decoder (self.query_batches, memory_traj) # [bs, N history, Features]
         # ----------------------------------------------------------------------- #
@@ -133,14 +141,16 @@ class TransTraj (nn.Module):
         lanes_enc = self.process_lanes(lanes=lanes)
         lanes_enc = self.lanes_emb(lanes_enc)
         lanes_mem = self.lane_encoder(lanes_enc)
-        out = self.lane_decoder(out_traj, lanes_mem)
+        lanes_mem = lanes_mem.unsqueeze(1).repeat(1, num_agents, 1, 1)
+        out = self.lane_decoder(out_traj, lanes_mem) # out traj as target lane_mem as memory
         # ----------------------------------------------------------------------- #
+        num_traj = out.shape[2] # Number of predictions (K)
+        out = out.view (bs, num_agents, num_traj, -1)
         # Get the output i the expected dimensions
         pred: torch.Tensor = self.reg_mlp(out)
-        bs = historic_traj.shape[0]
-        num_traj = pred.shape[1]
+        pred = pred.view(bs, num_agents, num_traj, -1, num_features) # [bs, N traj, Traj size, out feats(x, y, ...)]
+        num_traj = pred.shape[1] # Number of predictions (K)
         
-        pred = pred.view(bs, num_traj, -1, 2) # [bs, N traj, Traj size, out feats(x, y, ...)]
         cls_h = self.cls_FFN(out)
         cls_h = self.classification_layer(cls_h).squeeze(dim=-1)
         conf: torch.Tensor = self.cls_opt(cls_h)
