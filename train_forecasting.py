@@ -164,10 +164,9 @@ class TransformerTrain ():
                 
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj[:,:,:2].to(self.device)
+                future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
-                
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
                 # dec_input = torch.cat((start_tensor, tgt), 1).to(self.device)
@@ -198,7 +197,6 @@ class TransformerTrain ():
                     print('-' * 89)
                     print (f'| epoch {self.epoch} | iteration {self.iteration} | [train] loss {np_loss} |')
                     self.tb_writer.add_scalar('Loss/train', self.last_train_loss, self.iteration)
-                    
             # Calculate and print training statistics
             loss_epoch = np.mean(epoch_losses)
             print('=' * 89)
@@ -234,7 +232,7 @@ class TransformerTrain ():
                 lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1) # Delete Z-coordinate and ID
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj[:,:,:2].to(self.device)
+                future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
                 # ----------------------------------------------------------------------- #
@@ -249,9 +247,9 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                min_ade = self.minADE.compute(pred, future_traj[:,:,:2])
-                min_fde = self.minFDE.compute(pred, future_traj[:,:,:2])
-                mr_loss = self.MR.compute(pred, future_traj[:,:,:2])
+                min_ade = self.minADE.compute(pred, future_traj)
+                min_fde = self.minFDE.compute(pred, future_traj)
+                mr_loss = self.MR.compute(pred, future_traj)
                 minADE_metrics.append (min_ade.detach().cpu().numpy())
                 minFDE_metrics.append (min_fde.detach().cpu().numpy())
                 mr_metrics.append (mr_loss.detach().cpu().numpy())
