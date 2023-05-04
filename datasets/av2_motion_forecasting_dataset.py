@@ -74,18 +74,18 @@ class Av2MotionForecastingDataset (Dataset):
             dict: Sequences for the encoder and for the decoder
         """
         sample = {}
-        scene_traj_data = self.scenes_data[idx]['agents']
+        scene_agents_data = self.scenes_data[idx]['agents']
         map_path = self.scenes_data[idx]['map_path']
         historic_trajectories = []
         future_trajectories = []
         historic_offset_trajectories = []
         future_offset_trajectories = []
 
-        for traj_data in scene_traj_data:
-            historic_trajectories.append (traj_data['historic'])
-            future_trajectories.append(traj_data['future'])
-            historic_offset_trajectories.append (traj_data['offset_historic'])
-            future_offset_trajectories.append(traj_data['offset_future'])
+        for agent_data in scene_agents_data:
+            historic_trajectories.append (agent_data['historic'])
+            future_trajectories.append(agent_data['future'])
+            historic_offset_trajectories.append (agent_data['offset_historic'])
+            future_offset_trajectories.append(agent_data['offset_future'])
         
         historic_trajectories = np.asarray(historic_trajectories)
         future_trajectories = np.asarray(future_trajectories)
@@ -96,6 +96,13 @@ class Av2MotionForecastingDataset (Dataset):
         sample['future'] = torch.tensor(future_trajectories, dtype=torch.float32)
         sample['offset_historic'] = torch.tensor(historic_offset_trajectories, dtype=torch.float32)
         sample['offset_future'] = torch.tensor(future_offset_trajectories, dtype=torch.float32)
+        
+        # print ('sample[historic].size()', sample['historic'].size())
+        
+        # for traj in historic_trajectories:
+        #     plt.plot(traj[:,0], traj[:,1], color=(0,0,1))
+        # for traj in future_trajectories:
+        #     plt.plot(traj[:,0], traj[:,1], color=(0,1,0))
         
         lanes = []
         with open(map_path, 'rb') as f:
@@ -111,6 +118,11 @@ class Av2MotionForecastingDataset (Dataset):
             right_lane_feat = np.hstack ((lane_data['right_lane_boundary'], is_intersection_v, right_mark_type_v, id_v))
             lanes.append(left_lane_feat)
             lanes.append(right_lane_feat)
+            
+            # plt.plot(lane_data['left_lane_boundary'][:,0], lane_data['left_lane_boundary'][:,1], linewidth=1, color=(0,0,0))
+            # plt.plot(lane_data['right_lane_boundary'][:,0], lane_data['right_lane_boundary'][:,1], linewidth=1, color=(0,0,0))
+
+        # plt.show()
         lanes = np.asarray(lanes)
         sample['lanes'] = torch.tensor(lanes, dtype=torch.float32)
         return sample

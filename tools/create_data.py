@@ -15,6 +15,7 @@ from av2.datasets.motion_forecasting.data_schema import ArgoverseScenario, Objec
 from av2.map.map_api import ArgoverseStaticMap
 from av2.utils.typing import NDArrayFloat, NDArrayInt
 from av2.geometry.interpolate import interp_arc
+from joblib import Parallel, delayed
 # ===================================================================================== #
 parser = argparse.ArgumentParser(description='Data converter arg parser')
 parser.add_argument('dataset', metavar='av2', help='name of the dataset')
@@ -26,7 +27,7 @@ parser.add_argument(
 parser.add_argument(
     '--output_filename',
     type=str,
-    default='target_simplified',
+    default='agents',
     help='Filename of the data')
 
 args = parser.parse_args()
@@ -90,10 +91,10 @@ def prepare_data_av2(split: str):
             if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                 continue
             # Only get the 'FOCAL TACK' and 'SCORED CARS'
-            # if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
-            #     continue
-            if track.category != data_schema.TrackCategory.FOCAL_TRACK:
+            if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
                 continue
+            # if track.category != data_schema.TrackCategory.FOCAL_TRACK:
+                # continue
             
             # Get timesteps for which actor data is valid
             actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
@@ -250,16 +251,15 @@ def prepare_data_av2(split: str):
             # Plot
             # for lane_data in scene_lanes_data:
             #     polylines = [lane_data['left_lane_boundary'], lane_data['right_lane_boundary']]
-            #     centerlines = lane_data['centerline']
-                
+            #     # centerlines = lane_data['centerline']
             #     for polyline in polylines:
             #         plt.plot(polyline[:, 0], polyline[:, 1], "-", linewidth=1.0, color=(0,0,0), alpha=1.0)
-            #     plt.plot(centerlines[:, 0], centerlines[:, 1], "-", linewidth=1.0, color='y', alpha=1.0)
-            # for track_id in scene_src_actor_traj_id.keys():
-            #     src_traj = scene_src_actor_traj_id[track_id]
-            #     tgt_traj = scene_tgt_actor_traj_id[track_id]
-            #     plt.plot(src_traj[:, 0], src_traj[:, 1], "-", linewidth=1.0, color='b', alpha=1.0)
-            #     plt.plot(tgt_traj[:, 0], tgt_traj[:, 1], "-", linewidth=1.0, color='g', alpha=1.0)
+            #     # plt.plot(centerlines[:, 0], centerlines[:, 1], "-", linewidth=1.0, color='y', alpha=1.0)
+            # for agent_data in scene_agents_data:
+            #     src_traj = agent_data["historic"]
+            #     tgt_traj = agent_data["future"]
+            #     plt.plot(src_traj[:, 0], src_traj[:, 1], "-", color='b', alpha=1.0)
+            #     plt.plot(tgt_traj[:, 0], tgt_traj[:, 1], "-", color='g', alpha=1.0)
             # plt.show()
         else:
             # Not found focal agent or target agent
