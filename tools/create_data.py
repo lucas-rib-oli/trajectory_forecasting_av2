@@ -26,7 +26,7 @@ parser.add_argument(
 parser.add_argument(
     '--output_filename',
     type=str,
-    default='target_simplified',
+    default='FOCAL_TRACK',
     help='Filename of the data')
 
 args = parser.parse_args()
@@ -61,6 +61,10 @@ LANE_MARKTYPE_DICT = {
     "NONE": 14,
     "UNKNOWN": 15
 }
+# ===================================================================================== #
+def normalice_heading (angle):
+    norm_angle = (angle + np.pi) % (2 * np.pi) - np.pi
+    return norm_angle
 # ===================================================================================== #
 def prepare_data_av2(split: str):
     argoverse_scenario_dir = os.path.join(args.root_path, 'motion_forecasting', split)
@@ -101,7 +105,7 @@ def prepare_data_av2(split: str):
             if actor_timesteps.shape[0] < _TOTAL_DURATION_TIMESTEPS:
                 continue
             # Get actor trajectory and heading history and instantaneous velocity
-            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [np.sin(object_state.heading), np.cos(object_state.heading)] + list(object_state.velocity) for object_state in track.object_states])
+            actor_state: NDArrayFloat = np.array( [list(object_state.position) + [object_state.heading] + list(object_state.velocity) for object_state in track.object_states])
             # Get source actor trajectory and heading history -> observerd or historical trajectory
             src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
             # Get target actor trajectory and heading history -> forescated or predicted trajectory
@@ -117,20 +121,19 @@ def prepare_data_av2(split: str):
             src_full_traj = raw_scene_src_actor_traj_id[scenario.focal_track_id][:, 0:2]
             tgt_full_traj = raw_scene_tgt_actor_traj_id[scenario.focal_track_id][:, 0:2]
             
-            heading_vector = raw_scene_src_actor_traj_id[scenario.focal_track_id][-1, 2:4]
-            sin_heading = heading_vector[0]
-            cos_heading = heading_vector[1]
             # Get the focal heading
-            focal_heading = np.arctan2(sin_heading,
-                                       cos_heading)
+            focal_heading = raw_scene_src_actor_traj_id[scenario.focal_track_id][-1, 2]
+            # Make vector to rot
+            sin_rot = np.sin(-focal_heading)
+            cos_rot = np.cos(-focal_heading)
             
             src_zeros_vector = np.zeros((src_full_traj.shape[0], 1))
             src_ones_vector = np.ones((src_full_traj.shape[0], 1))
             tgt_zeros_vector = np.zeros((tgt_full_traj.shape[0], 1))
             tgt_ones_vector = np.ones((tgt_full_traj.shape[0], 1))
             
-            rot_matrix = np.array([[cos_heading, -sin_heading, 0, 0],
-                                   [sin_heading,  cos_heading, 0, 0],
+            rot_matrix = np.array([[cos_rot, -sin_rot, 0, 0],
+                                   [sin_rot,  cos_rot, 0, 0],
                                    [          0,            0, 1, 0],
                                    [          0,            0, 0, 1]])
             # ----------------------------------------------------------------------- #
@@ -175,12 +178,11 @@ def prepare_data_av2(split: str):
             for track_id in raw_scene_tgt_actor_traj_id.keys():
                 src_agent_coordinate = raw_scene_src_actor_traj_id[track_id][:, 0:2]
                 tgt_agent_coordinate = raw_scene_tgt_actor_traj_id[track_id][:, 0:2]
+                src_agent_heading = raw_scene_src_actor_traj_id[track_id][:,3]
+                tgt_agent_heading = raw_scene_tgt_actor_traj_id[track_id][:,3]
                 
-                src_agent_heading = np.arctan2(raw_scene_src_actor_traj_id[track_id][:,2], raw_scene_src_actor_traj_id[track_id][:,3])
-                tgt_agent_heading = np.arctan2(raw_scene_tgt_actor_traj_id[track_id][:,2], raw_scene_tgt_actor_traj_id[track_id][:,3])
-                
-                src_agent_velocity = raw_scene_src_actor_traj_id[track_id][:, 4:]
-                tgt_agent_velocity = raw_scene_tgt_actor_traj_id[track_id][:, 4:]
+                src_agent_velocity = raw_scene_src_actor_traj_id[track_id][:, 3:]
+                tgt_agent_velocity = raw_scene_tgt_actor_traj_id[track_id][:, 3:]
                 
                 # Add Z --> 0 and make matrix 4x4
                 src_agent_coordinate = np.append (src_agent_coordinate, src_zeros_vector, axis=1)
@@ -205,11 +207,9 @@ def prepare_data_av2(split: str):
                 src_agent_velocity_tf = src_agent_velocity_tf[:,0:2] # Get only the components
                 tgt_agent_velocity_tf = tgt_agent_velocity_tf[:,0:2]
                 # Transformed heading
-                src_agent_heading_tf = src_agent_heading - focal_heading
-                tgt_agent_heading_tf = tgt_agent_heading - focal_heading
-                # Normalice heading [-pi, pi)
-                src_agent_heading_tf = (src_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
-                tgt_agent_heading_tf = (tgt_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
+                src_agent_heading_tf = normalice_heading (src_agent_heading - focal_heading)
+                tgt_agent_heading_tf = normalice_heading (tgt_agent_heading - focal_heading)
+                
                 # Vector heading
                 src_agent_vector_heading_tf = np.array([np.sin(src_agent_heading_tf), np.cos(src_agent_heading_tf)])
                 tgt_agent_vector_heading_tf = np.array([np.sin(tgt_agent_heading_tf), np.cos(tgt_agent_heading_tf)])
@@ -250,14 +250,14 @@ def prepare_data_av2(split: str):
             # Plot
             # for lane_data in scene_lanes_data:
             #     polylines = [lane_data['left_lane_boundary'], lane_data['right_lane_boundary']]
-            #     centerlines = lane_data['centerline']
+            #     # centerlines = lane_data['centerline']
                 
             #     for polyline in polylines:
             #         plt.plot(polyline[:, 0], polyline[:, 1], "-", linewidth=1.0, color=(0,0,0), alpha=1.0)
-            #     plt.plot(centerlines[:, 0], centerlines[:, 1], "-", linewidth=1.0, color='y', alpha=1.0)
-            # for track_id in scene_src_actor_traj_id.keys():
-            #     src_traj = scene_src_actor_traj_id[track_id]
-            #     tgt_traj = scene_tgt_actor_traj_id[track_id]
+            #     # plt.plot(centerlines[:, 0], centerlines[:, 1], "-", linewidth=1.0, color='y', alpha=1.0)
+            # for agent_data in scene_agents_data:
+            #     src_traj = agent_data['historic']
+            #     tgt_traj = agent_data['future']
             #     plt.plot(src_traj[:, 0], src_traj[:, 1], "-", linewidth=1.0, color='b', alpha=1.0)
             #     plt.plot(tgt_traj[:, 0], tgt_traj[:, 1], "-", linewidth=1.0, color='g', alpha=1.0)
             # plt.show()
