@@ -159,27 +159,20 @@ class TransformerTrain ():
                 # Get the data from the dataloader
                 historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
                 future_traj: torch.Tensor = data['future']
-                offset_future_traj: torch.Tensor = data['offset_future']
-                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1) # Delete Z-coordinate and ID
-                
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj[:,:,:2].to(self.device)
-                offset_future_traj = offset_future_traj.to(self.device)
-                lanes = lanes.to(self.device)
-                
-                # 0, 0, 0 indicate the start of the sequence
-                # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
-                # dec_input = torch.cat((start_tensor, tgt), 1).to(self.device)
-                # dec_input = tgt
+                future_traj = future_traj.to(self.device)
+                # Now we shift the future_traj by one so with the <s0> we predict s1
+                tgt_input = future_traj[:,:-1]
+                tgt_expected = future_traj[:,1:]
                 # ----------------------------------------------------------------------- #
                 # Generate a square mask for the sequence
-                # src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
+                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, tgt_input)
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
+                pred = self.model (historic_traj, tgt_input, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                loss = self.loss_fn(pred, tgt_expected)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
@@ -198,7 +191,6 @@ class TransformerTrain ():
                     print('-' * 89)
                     print (f'| epoch {self.epoch} | iteration {self.iteration} | [train] loss {np_loss} |')
                     self.tb_writer.add_scalar('Loss/train', self.last_train_loss, self.iteration)
-                    
             # Calculate and print training statistics
             loss_epoch = np.mean(epoch_losses)
             print('=' * 89)
