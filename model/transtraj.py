@@ -4,6 +4,7 @@ import numpy as np
 import math
 from typing import Optional, Any, Union, Callable
 from model import TransformerEncoder, TransformerDecoder, TransformerEncoderLayer, TransformerDecoderLayer, MLP, LaneNet
+from torch.autograd import Variable
 
 class TransTraj (nn.Module):
     """Transformer with a linear embedding
@@ -11,9 +12,7 @@ class TransTraj (nn.Module):
     Args:
         nn (_type_): _description_
     """
-    def __init__(self, pose_dim: int, dec_out_size: int, num_queries: int,
-                 lane_channels: int, subgraph_width: int, num_subgraph_layers: int,
-                 future_size: int = 60,
+    def __init__(self, pose_dim: int,
                  d_model = 512, nhead = 8, N = 6, dim_feedforward = 2048, dropout=0.1):
         """_summary_
 
@@ -31,57 +30,24 @@ class TransTraj (nn.Module):
         # ----------------------------------------------------------------------- #
         super().__init__()
         self.model_type = 'Transformer'
-        self.future_size = future_size
         self.d_model = d_model
-        self.pose_dim = pose_dim
-        self.dec_out_size = dec_out_size
-        # ----------------------------------------------------------------------- #
+        
         self.enc_linear_embedding = LinearEmbedding(pose_dim, d_model)
         self.pos_encoder = PositionalEncoding(d_model, dropout)
-        self.pos_decoder = PositionalEncoding(d_model, dropout)
-        # ----------------------------------------------------------------------- #
-        # VectorNet Subgraph
-        self.subgraph = LaneNet(lane_channels, subgraph_width, num_subgraph_layers)
-        self.lanes_emb = LinearEmbedding(subgraph_width*2, d_model)
-        lane_enc_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                    batch_first=True)
-        lane_dec_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                    batch_first=True)
-        self.lane_encoder = nn.TransformerEncoder(encoder_layer=lane_enc_layer, num_layers=N)
-        self.lane_decoder = nn.TransformerDecoder(decoder_layer=lane_dec_layer, num_layers=N)
-        # ----------------------------------------------------------------------- #
-        # Use the vanilla Tranformer Encoder Layer
-        encoder_layer = nn.TransformerEncoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                    batch_first=True)
-        decoder_layer = TransformerDecoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, 
-                                                 batch_first=True)
-
-        self.encoder = nn.TransformerEncoder(encoder_layer=encoder_layer, num_layers=N)
-        self.decoder = TransformerDecoder(decoder_layer=decoder_layer, num_layers=N)
         
+        self.dec_linear_embedding = LinearEmbedding(pose_dim, d_model)
+        self.pos_decoder = PositionalEncoding(d_model, dropout)
+        
+        # Create a Transformer module (in the paper ins only the middle box, not include linear output in the decoder)
+        self.transformer = nn.Transformer (d_model=d_model, nhead=nhead, num_encoder_layers=N, num_decoder_layers=N, dim_feedforward=dim_feedforward, dropout=dropout, batch_first=True, activation='gelu')
         
         # self.linear_out = nn.Linear(d_model, dec_out_size)
         d_model_2 = int (d_model / 2)
-        # self.linear_out = nn.Sequential( nn.Linear(d_model, d_model, bias=True), 
-        #                                  nn.LayerNorm(d_model), 
-        #                                  nn.GELU(), 
-        #                                  nn.Linear(d_model, d_model_2, bias=True), 
-        #                                  nn.Linear(d_model_2, dec_out_size, bias=True) )
-        
-        self.reg_mlp = nn.Sequential(
-                       nn.Linear(d_model, d_model*2, bias=True),
-                       nn.LayerNorm(d_model*2),
-                       nn.ReLU(),
-                       nn.Dropout(dropout),
-                       nn.Linear(d_model*2, d_model, bias=True),
-                       nn.Linear(d_model, dec_out_size, bias=True), # Dim_features (x,y ..) * N Frames futuros --> view (60, pose_dim (2 or 6))
-                       nn.Dropout(dropout)) 
-        
-        self.cls_FFN = PointerwiseFeedforward(d_model, 2*d_model, dropout=dropout)
-        self.classification_layer = nn.Sequential(
-                                    nn.Linear(d_model, d_model),
-                                    nn.Linear(d_model, 1, bias=True))
-        self.cls_opt = nn.Softmax(dim=-1)
+        self.linear_out = nn.Sequential( nn.Linear(d_model, d_model, bias=True), 
+                                         nn.LayerNorm(d_model), 
+                                         nn.ReLU(), 
+                                         nn.Linear(d_model, d_model_2, bias=True), 
+                                         nn.Linear(d_model_2, pose_dim, bias=True) )
         
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
@@ -89,11 +55,6 @@ class TransTraj (nn.Module):
             # print(name)
             if param.dim() > 1:
                 nn.init.xavier_uniform_(param)
-
-        self.num_queries = num_queries # Number trajectories
-        self.query_embed = nn.Embedding(self.num_queries, d_model)
-        # self.query_embed.weight.requires_grad == False
-        nn.init.orthogonal_(self.query_embed.weight)
     
     def process_lanes (self, lanes: torch.Tensor):
         # Get the lanes in vectorized form ( VectorNet: v = [dsi , dei , ai, j] )
@@ -102,7 +63,7 @@ class TransTraj (nn.Module):
         lane_feature: torch.Tensor = self.subgraph(lane_v)
         return lane_feature
         
-    def forward(self, historic_traj: torch.Tensor, future_traj: torch.Tensor, lanes: torch.Tensor, src_mask: torch.Tensor, tgt_mask: torch.Tensor, 
+    def forward(self, historic_traj: torch.Tensor, future_traj: torch.Tensor, src_mask: torch.Tensor, tgt_mask: torch.Tensor, 
                 src_padding_mask: Optional[torch.Tensor] = None, tgt_padding_mask: Optional[torch.Tensor] = None):
         """_summary_
 
@@ -118,35 +79,29 @@ class TransTraj (nn.Module):
         Returns:
             _type_: _description_
         """
-        # Apply linear embedding with the positional encoding
-        historic_traj = self.enc_linear_embedding(historic_traj)
-        historic_traj = self.pos_encoder(historic_traj)
-        # tgt = self.dec_linear_embedding(tgt)
-        # tgt = self.pos_decoder(tgt)
-        
-        self.query_batches = self.query_embed.weight.view(1, *self.query_embed.weight.shape).repeat(future_traj.shape[0], 1, 1)
-        
-        memory_traj = self.encoder(historic_traj) # [bs, N history, Features]
-        out_traj = self.decoder (self.query_batches, memory_traj) # [bs, N history, Features]
         # ----------------------------------------------------------------------- #
-        # Lane step
-        lanes_enc = self.process_lanes(lanes=lanes)
-        lanes_enc = self.lanes_emb(lanes_enc)
-        lanes_mem = self.lane_encoder(lanes_enc)
-        out = self.lane_decoder(out_traj, lanes_mem)
+        # Apply linear embedding with the positional encoding
+        src = self.enc_linear_embedding(historic_traj)
+        src = self.pos_encoder(src)
+        tgt = self.dec_linear_embedding(future_traj)
+        tgt = self.pos_decoder(tgt)
+        # ----------------------------------------------------------------------- #
+        # Transformer step
+        output = self.transformer(src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_key_padding_mask=src_padding_mask, 
+                                  tgt_key_padding_mask=tgt_padding_mask, memory_key_padding_mask=src_padding_mask)
         # ----------------------------------------------------------------------- #
         # Get the output i the expected dimensions
-        pred: torch.Tensor = self.reg_mlp(out)
-        bs = historic_traj.shape[0]
-        num_traj = pred.shape[1]
-        
-        pred = pred.view(bs, num_traj, -1, 2) # [bs, N traj, Traj size, out feats(x, y, ...)]
-        cls_h = self.cls_FFN(out)
-        cls_h = self.classification_layer(cls_h).squeeze(dim=-1)
-        conf: torch.Tensor = self.cls_opt(cls_h)
-        
-        return pred, conf
+        output = self.linear_out(output)
+        return output
+    
+    def encode(self, src: torch.Tensor, src_mask: torch.Tensor):
+        return self.transformer.encoder(self.pos_encoder (self.enc_linear_embedding(src)), src_mask)
+    
+    def decode (self, tgt: torch.Tensor, memory: torch.Tensor, tgt_mask: torch.Tensor):
+        return self.transformer.decoder(self.pos_decoder(self.dec_linear_embedding(tgt)), memory, tgt_mask)
 
+    def generate (self, out_dec : torch.Tensor):
+        return self.linear_out(out_dec)
 
 class PositionalEncoding(nn.Module):
     """PositionalEncoding module injects some information about the relative or absolute position of the tokens in the sequence. 
