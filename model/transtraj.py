@@ -43,11 +43,7 @@ class TransTraj (nn.Module):
         
         # self.linear_out = nn.Linear(d_model, dec_out_size)
         d_model_2 = int (d_model / 2)
-        self.linear_out = nn.Sequential( nn.Linear(d_model, d_model, bias=True), 
-                                         nn.LayerNorm(d_model), 
-                                         nn.ReLU(), 
-                                         nn.Linear(d_model, d_model_2, bias=True), 
-                                         nn.Linear(d_model_2, pose_dim, bias=True) )
+        self.linear_out = nn.Linear(d_model, pose_dim, bias=True)
         
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
