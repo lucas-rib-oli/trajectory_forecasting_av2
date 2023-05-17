@@ -202,7 +202,6 @@ class TransformerTrain ():
             self.lr_scheduler.step()
             self.learning_rate = get_lr(self.optimizer)
             self.tb_writer.add_scalar('Learning Rate/epoch', self.learning_rate, self.epoch)
-       
            
     # ===================================================================================== #
     def validation(self):
