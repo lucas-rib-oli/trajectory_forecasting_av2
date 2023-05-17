@@ -239,18 +239,16 @@ class TransformerTrain ():
                 # Apply Greedy Code
                 for _ in range (0, self.future_size - 1):
                     # Get target mask
-                    tgt_mask = (self.generate_square_subsequent_mask(dec_inp.size()[1]))
+                    tgt_mask = self.generate_square_subsequent_mask(dec_inp.size()[1])
                     # Get tokens
                     out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
                     # Generate the prediction
                     prediction = self.model.generate ( out ).to(self.device)
                     # Concatenate
                     dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
-                
                 tgt_expected = future_traj[:, 1:]
                 output_expected = dec_inp[:, 1:]
                 loss = self.loss_fn(output_expected, tgt_expected)
-                
                 
                 validation_losses.append(loss.detach().cpu().numpy())
                 # ----------------------------------------------------------------------- #
