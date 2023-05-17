@@ -150,10 +150,10 @@ class TransformerTrain ():
         return src_mask, tgt_mask, src_padding_mask, tgt_padding_mask
     # ===================================================================================== #
     def train(self):
-        # set network in train mode
-        self.model.train()
         # Epochs
         for self.epoch in range(self.start_epoch, self.num_epochs):
+            # Set network in train mode
+            self.model.train()
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
                 # Get the data from the dataloader
