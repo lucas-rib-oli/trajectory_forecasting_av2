@@ -9,6 +9,7 @@ from av2.map.map_api import ArgoverseStaticMap
 from av2.geometry.interpolate import interp_arc
 from datasets import Av2MotionForecastingDataset, collate_fn
 from model.transtraj import TransTraj
+from model.basic_functions import generate_square_subsequent_mask
 from typing import Final, Dict, List
 from collections import defaultdict
 from colorama import Fore
@@ -365,17 +366,12 @@ class TransformerPrediction ():
             print (Fore.RED + 'Eror to open .pth' + Fore.RESET)
             sys.exit(0)
     # ---------------------------------------------------------------------------------------------------- #
-    def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
-        """Generates an upper-triangular matrix of -inf, with zeros on diag."""
-        mask = (torch.triu(torch.ones((sz, sz), device=self.device)) == 1).transpose(0, 1)
-        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        return mask
     def create_mask(self, src: torch.Tensor, tgt: torch.Tensor):
         src_seq_len = src.shape[1]
         tgt_seq_len = tgt.shape[1]
         batch_size = src.shape[0]
         
-        tgt_mask = self.generate_square_subsequent_mask(tgt_seq_len)
+        tgt_mask = generate_square_subsequent_mask(tgt_seq_len, self.device)
         src_mask = torch.zeros((src_seq_len, src_seq_len),device=self.device).type(torch.bool)
 
         src_padding_mask = torch.zeros((batch_size, src_seq_len),device=self.device).type(torch.bool)
