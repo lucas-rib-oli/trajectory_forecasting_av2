@@ -254,9 +254,9 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                min_ade = self.minADE.compute(dec_inp, future_traj)
-                min_fde = self.minFDE.compute(dec_inp, future_traj)
-                mr_loss = self.MR.compute(dec_inp, future_traj)
+                min_ade = self.minADE.compute(output_expected, tgt_expected)
+                min_fde = self.minFDE.compute(output_expected, tgt_expected)
+                mr_loss = self.MR.compute(output_expected, tgt_expected)
                 minADE_metrics.append (min_ade.detach().cpu().numpy())
                 minFDE_metrics.append (min_fde.detach().cpu().numpy())
                 mr_metrics.append (mr_loss.detach().cpu().numpy())
