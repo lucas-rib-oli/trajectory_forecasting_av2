@@ -124,7 +124,7 @@ class PositionalEncoding(nn.Module):
         Args:
             x: Tensor, shape [batch_size, seq_len, embedding_dim]
         """
-        x = x + Variable(self.pe[:x.shape[-2]], requires_grad=False)
+        x = x + Variable(self.pe[:x.size(1)], requires_grad=False)
         return self.dropout(x)
 
 class LinearEmbedding(nn.Module):
