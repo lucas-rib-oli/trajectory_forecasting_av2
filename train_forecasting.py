@@ -157,8 +157,8 @@ class TransformerTrain ():
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
                 # Get the data from the dataloader
-                historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
-                future_traj: torch.Tensor = data['future']
+                historic_traj: torch.Tensor = data['historic'][:,42:] # (bs, sequence length, feature number)
+                future_traj: torch.Tensor = data['future'][:,:12]
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
@@ -219,8 +219,8 @@ class TransformerTrain ():
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
-                historic_traj: torch.Tensor = data['historic']
-                future_traj: torch.Tensor = data['future']
+                historic_traj: torch.Tensor = data['historic'][:,42:]
+                future_traj: torch.Tensor = data['future'][:,:12]
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
@@ -237,7 +237,7 @@ class TransformerTrain ():
                 dec_inp = dec_inp.unsqueeze(1).to(self.device)
                 # ----------------------------------------------------------------------- #
                 # Apply Greedy Code
-                for _ in range (0, self.future_size - 1):
+                for _ in range (0, 11):
                     # Get target mask
                     tgt_mask = self.generate_square_subsequent_mask(dec_inp.size()[1])
                     # Get tokens

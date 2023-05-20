@@ -1,10 +1,10 @@
 
 train = dict(
     device = "cuda:0",
-    num_workers = 8,
-    experiment_name = "seq2seq_TFM",
+    num_workers = 16,
+    experiment_name = "seq2seq_TFM_outLinear_12",
     num_epochs = 600,
-    batch_size = 512,
+    batch_size = 2048,
     resume_train = False,
 )
 
