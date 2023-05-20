@@ -17,5 +17,5 @@ class MR ( ):
             pred_traj (torch.Tensor): Predicted trajectory [bs, pred_len, 2]
             gt_traj (torch.Tensor): GT trajectory [bs, pred_len, 2]
         """
-        mr = (torch.norm(pred_traj[:,:, -1] - gt_traj[:,:, -1], p=2, dim=-1) > self.miss_threshold).sum(-1).float()
+        mr = (torch.norm(pred_traj[:,-1, 0:2] - gt_traj[:,-1, 0:2], p=2, dim=-1) > self.miss_threshold).float()
         return torch.mean(mr)

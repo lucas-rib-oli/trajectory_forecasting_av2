@@ -18,6 +18,5 @@ class minFDE ():
             pred_traj (torch.Tensor): Predicted trajectory [bs, pred_len, 2]
             gt_traj (torch.Tensor): GT trajectory [bs, pred_len, 2]
         """
-        fde = torch.norm(pred_traj[:,:, -1] - gt_traj[:,:, -1], p=2, dim=-1)
-        min_fde, _ = torch.min(fde, dim=-1)
-        return torch.mean(min_fde)
+        fde = torch.norm(pred_traj[:, -1, 0:2] - gt_traj[:,-1, 0:2], p=2, dim=-1)
+        return torch.mean(fde)
