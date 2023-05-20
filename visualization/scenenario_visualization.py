@@ -146,7 +146,7 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
             # Save
             transformed_object_states.append(transformed_object_state)
         track.object_states = transformed_object_states
-    _plot_actor_tracks(ax, scenario, 49)
+    _plot_actor_tracks(ax, scenario, _OBS_DURATION_TIMESTEPS-1)
     # ----------------------------------------------------------------------- #
     # Transform map to target-centric
     for lane_segment in static_map.vector_lane_segments.values():
@@ -184,20 +184,34 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         _plot_polylines([transformed_edge1_xyz, transformed_edge2_xyz ], alpha=1.0, color=_LANE_SEGMENT_COLOR)
         
     # ----------------------------------------------------------------------- #
+    # Dibujar el vector del eje X
+    arrow_x = ax.arrow(0, 0, 10, 0, head_width=3.0, head_length=3.0, fc='red', ec='red')
+    ax.text(10.1, 2.5, 'X', color='red')
+
+    # Dibujar el vector del eje Y
+    arrow_y = ax.arrow(0, 0, 0, 10, head_width=3.0, head_length=3.0, fc='green', ec='green')
+    ax.text(2.0, 10.1, 'Y', color='green')
+    
+    arrow_x.set_zorder(10)
+    arrow_y.set_zorder(10)
+    
+    # Etiquetas de los ejes
+    ax.set_xlabel('Eje X')
+    ax.set_ylabel('Eje Y')
     plt.show()
     for timestep in range(_OBS_DURATION_TIMESTEPS + _PRED_DURATION_TIMESTEPS):
         _, ax = plt.subplots()
 
         # Plot static map elements and actor tracks
-        _plot_static_map_elements(static_map)
-        cur_plot_bounds = _plot_actor_tracks(ax, scenario, timestep)
-        if cur_plot_bounds:
-            plot_bounds = cur_plot_bounds
+        # _plot_static_map_elements(static_map)
+        # cur_plot_bounds = _plot_actor_tracks(ax, scenario, timestep)
+        # if cur_plot_bounds:
+        #     plot_bounds = cur_plot_bounds
 
         # Set map bounds to capture focal trajectory history (with fixed buffer in all directions)
-        plt.xlim(plot_bounds[0] - _PLOT_BOUNDS_BUFFER_M, plot_bounds[1] + _PLOT_BOUNDS_BUFFER_M)
-        plt.ylim(plot_bounds[2] - _PLOT_BOUNDS_BUFFER_M, plot_bounds[3] + _PLOT_BOUNDS_BUFFER_M)
-        plt.gca().set_aspect("equal", adjustable="box")
+        # plt.xlim(plot_bounds[0] - _PLOT_BOUNDS_BUFFER_M, plot_bounds[1] + _PLOT_BOUNDS_BUFFER_M)
+        # plt.ylim(plot_bounds[2] - _PLOT_BOUNDS_BUFFER_M, plot_bounds[3] + _PLOT_BOUNDS_BUFFER_M)
+        # plt.gca().set_aspect("equal", adjustable="box")
 
         # Minimize plot margins and make axes invisible
         plt.gca().set_axis_off()
@@ -377,8 +391,9 @@ def _plot_actor_bounding_box(
     vehicle_bounding_box = Rectangle(
         (pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), color=color, zorder=_BOUNDING_BOX_ZORDER
     )
-    ax.add_patch(vehicle_bounding_box)
+    rect = ax.add_patch(vehicle_bounding_box)
+    rect.set_zorder(5)
 
 if __name__ == '__main__':
-    scenario, static_map = get_av2_data(split=args.split, idx=250)
+    scenario, static_map = get_av2_data(split=args.split, idx=20)
     visualize_scenario (scenario, static_map)
