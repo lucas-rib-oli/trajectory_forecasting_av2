@@ -31,7 +31,13 @@ args = parser.parse_args()
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr'] 
-
+def check_ram_memory ():
+    # Check RAM memory
+    if psutil.virtual_memory().available * 1e-9 < 2.0: # Less than 2 Gb
+        print ('='*100)
+        print (Fore.LIGHTRED_EX + 'Kill process for excess ' + Fore.RESET)
+        print ('='*100)
+        exit(0)
 # ===================================================================================== #
 class TransformerTrain ():
     def __init__(self, cfg) -> None:
@@ -152,6 +158,9 @@ class TransformerTrain ():
         for self.epoch in range(self.start_epoch, self.num_epochs):
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
+                # Check RAM memory
+                check_ram_memory ()
+                
                 # Get the data from the dataloader
                 historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
                 future_traj: torch.Tensor = data['future']
@@ -220,6 +229,8 @@ class TransformerTrain ():
         minFDE_metrics = []
         mr_metrics = []
         for idx, data in enumerate(self.val_dataloader):
+            # Check RAM memory
+            check_ram_memory ()
             # Set no requires grad
             with torch.no_grad():                
                 historic_traj: torch.Tensor = data['historic']
