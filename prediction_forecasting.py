@@ -101,8 +101,10 @@ class TransformerPrediction ():
         self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ---------------------------------------------------------------------------------------------------- #
         # Get the model
-        self.model = TransTraj (pose_dim=self.pose_dim, d_model=self.d_model, nhead=self.nhead, 
-                                N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
+        self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+                                subgraph_width=self.subgraph_width, num_subgraph_layers=self.num_subgraph_layers, lane_channels=self.lane_channels,
+                                future_size=self.future_size,
+                                d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # ---------------------------------------------------------------------------------------------------- #
         # Validation data
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
@@ -150,41 +152,34 @@ class TransformerPrediction ():
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
+                lanes = lanes.to(self.device)
                 # ----------------------------------------------------------------------- #
                 # Generate a square mask for the sequence
                 src_seq_len = historic_traj.size()[1]
                 src_mask = torch.zeros((src_seq_len, src_seq_len),device=self.device).type(torch.bool)
                 # ----------------------------------------------------------------------- #
-                # Encode step
-                memory = self.model.encode(historic_traj, src_mask).to(self.device)
-                # ----------------------------------------------------------------------- #
-                dec_inp = future_traj[:, 0, :]
-                # Implement one dimension for the tranformer to be able to deal with the input decoder
-                dec_inp = dec_inp.unsqueeze(1).to(self.device)
-                # ----------------------------------------------------------------------- #
-                # Apply Greedy Code
-                for _ in range (0, self.future_size - 1):
-                    # Get target mask
-                    tgt_mask = (self.generate_square_subsequent_mask(dec_inp.size()[1]))
-                    # Get tokens
-                    out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
-                    # Generate the prediction
-                    prediction = self.model.generate ( out ).to(self.device)
-                    # Concatenate
-                    dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
-                
+                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None)
+                index_with_highest_conf = torch.argmax(conf, dim=-1)[0] # Omit Batch Size
                 if args.save_figs:
                     plt.figure(figsize=(20,11))
-                plt.plot (historic_traj[0,:,0].cpu().numpy(), historic_traj[0,:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical')
-                
-                # Plot best prediction
-                color = (1,1,0)
-                label = 'best prediction'
-                plt.plot (dec_inp[0,:,0].cpu().numpy(), dec_inp[0,:,1].cpu().numpy(), '--o', color=color, label=label)
+                    
+                for agent_historic_traj in historic_traj[0]:
+                    plt.plot (agent_historic_traj[:,0].cpu().numpy(), agent_historic_traj[:,1].cpu().numpy(), '--o', color=(0,0,1), label='historical')
                 # Plot GT
+                for agent_idx, pred_trajs in enumerate(pred[0]):
+                    for traj_idx, pred_traj in enumerate(pred_trajs):
+                        # Check if we have the best prediction
+                        if traj_idx == index_with_highest_conf[agent_idx]:
+                            # Best prediction
+                            color = (1,1,0)
+                            label = 'best prediction'
+                            print (label)
+                        else:
+                            color = (0.3, 0.3, 0.3, 0.2)
+                            label = 'other prediction'
+                        plt.plot (pred_traj[:,0].cpu().numpy(), pred_traj[:,1].cpu().numpy(), '--o', color=color, label=label)
                 for future_traj in future_traj[0]:
                     plt.plot (future_traj[:,0].cpu().numpy(), future_traj[:,1].cpu().numpy(), '--o', color=(0,1,0, 0.6), label='Future GT')
-                
                 for lane in lanes[0]:
                     lane_cpu = lane.cpu().numpy()
                     plt.plot(lane_cpu[:, 0], lane_cpu[:, 1], "-", linewidth=1.0, color=(0,0,0), alpha=1.0)
