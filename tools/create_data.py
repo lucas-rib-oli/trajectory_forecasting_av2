@@ -261,6 +261,17 @@ def prepare_data_av2(split: str):
             #     tgt_traj = agent_data['future']
             #     plt.plot(src_traj[:, 0], src_traj[:, 1], "-", linewidth=1.0, color='b', alpha=1.0)
             #     plt.plot(tgt_traj[:, 0], tgt_traj[:, 1], "-", linewidth=1.0, color='g', alpha=1.0)
+            #     tgt_vel_mod = np.sqrt(np.power(tgt_traj[:, 4], 2) + np.power(tgt_traj[:, 5], 2))
+            #     mask = tgt_vel_mod > 0
+            #     u_tgt = np.where(mask, tgt_traj[:, 4] / tgt_vel_mod, 0)
+            #     v_tgt = np.where(mask, tgt_traj[:, 5] / tgt_vel_mod, 0)
+            #     plt.quiver(tgt_traj[:, 0], tgt_traj[:, 1], u_tgt, v_tgt, scale=60)
+                
+            #     src_vel_mod = np.sqrt(np.power(src_traj[:, 4], 2) + np.power(src_traj[:, 5], 2))
+            #     mask = src_vel_mod > 0
+            #     u_src = np.where(mask, src_traj[:, 4] / src_vel_mod, 0)
+            #     v_src = np.where(mask, src_traj[:, 5] / src_vel_mod, 0)
+            #     plt.quiver(src_traj[:, 0], src_traj[:, 1], u_src, v_src, scale=60)
             # plt.show()
         else:
             # Not found focal agent or target agent
