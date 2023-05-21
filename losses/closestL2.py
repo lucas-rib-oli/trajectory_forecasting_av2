@@ -25,20 +25,6 @@ class ClosestL2Loss (nn.Module):
             pred (torch.Tensor): _description_
             gt (torch.Tensor): _description_
         """
-        bs = pred.shape[0]
-        timesteps = pred.shape[-2]
-        feat_dim = pred.shape[-1]
-        # Compute distance
-        dist = torch.norm(gt_overdim[:,:,:,:2] - pred[:,:,:,:2], p=2, dim=-1)
-        
-        # finde the closest trajectory to the gt 
-        min_idx = torch.argmin(torch.sum(dist, dim=-1), dim=-1)
-        indexes = min_idx.view(bs, -1, 1, 1, 1).repeat(1,1,1,timesteps, feat_dim)
-        # Get the closest trajectory
-        closest_traj = torch.gather(pred, 2, indexes).squeeze(2) # Squeeze the trajectory index
-        # Get the gt with only one trajectory
-        gt = gt_overdim[:,:,0]
-        
         # import matplotlib.pyplot as plt
         # trajs_pred_0 = pred[0]
         # gt_0 = gt[0]
@@ -50,8 +36,10 @@ class ClosestL2Loss (nn.Module):
         # plt.show()
         
         # Compute loss
-        reg_loss = self.reg_loss_fn(closest_traj, gt)
-        return reg_loss
+        reg_loss = self.reg_loss_fn(pred, gt_overdim)
+        # Get the clostest distance
+        min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1)        
+        return min_reg_loss
     # ===================================================================================== #
     def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, offset_gt_trajs: torch.Tensor) -> torch.Tensor:
         """Forward function
