@@ -27,7 +27,7 @@ parser.add_argument(
 parser.add_argument(
     '--output_filename',
     type=str,
-    default='FOCAL_TRACK',
+    default='SCORED_TRACKS',
     help='Filename of the data')
 
 args = parser.parse_args()
@@ -143,8 +143,7 @@ def prepare_data_av2(split: str):
             for id, lane_segment in static_map.vector_lane_segments.items():
                 left_lane_boundary = lane_segment.left_lane_boundary.xyz
                 right_lane_boundary = lane_segment.right_lane_boundary.xyz
-                
-                # centerline = static_map.get_lane_segment_centerline(id)
+                centerline = static_map.get_lane_segment_centerline(id)
                 
                 left_lane_boundary = np.append(left_lane_boundary, np.ones((left_lane_boundary.shape[0], 1)), axis=1)
                 right_lane_boundary = np.append(right_lane_boundary, np.ones((right_lane_boundary.shape[0], 1)), axis=1)
@@ -163,6 +162,7 @@ def prepare_data_av2(split: str):
                 
                 # save the data
                 lane_data = {"ID": lane_segment.id,
+                             "centerline": centerline,
                              "left_lane_boundary": left_lane_boundary,
                              "right_lane_boundary": right_lane_boundary,
                              "is_intersection": lane_segment.is_intersection,
@@ -179,8 +179,8 @@ def prepare_data_av2(split: str):
             for track_id in raw_scene_tgt_actor_traj_id.keys():
                 src_agent_coordinate = raw_scene_src_actor_traj_id[track_id][:, 0:2]
                 tgt_agent_coordinate = raw_scene_tgt_actor_traj_id[track_id][:, 0:2]
-                src_agent_heading = raw_scene_src_actor_traj_id[track_id][:,3]
-                tgt_agent_heading = raw_scene_tgt_actor_traj_id[track_id][:,3]
+                src_agent_heading = raw_scene_src_actor_traj_id[track_id][:,2]
+                tgt_agent_heading = raw_scene_tgt_actor_traj_id[track_id][:,2]
                 
                 src_agent_velocity = raw_scene_src_actor_traj_id[track_id][:, 3:]
                 tgt_agent_velocity = raw_scene_tgt_actor_traj_id[track_id][:, 3:]
@@ -191,10 +191,6 @@ def prepare_data_av2(split: str):
                 tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_zeros_vector, axis=1)
                 tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_ones_vector, axis=1)
                 
-                src_agent_velocity = np.append (src_agent_velocity, src_zeros_vector, axis=1)
-                src_agent_velocity = np.append (src_agent_velocity, src_ones_vector, axis=1)
-                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_zeros_vector, axis=1)
-                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_ones_vector, axis=1)
                 # Substract the center
                 src_agent_coordinate = src_agent_coordinate - np.append (focal_coordinate, [0, 0])
                 tgt_agent_coordinate = tgt_agent_coordinate - np.append (focal_coordinate, [0, 0])
@@ -202,14 +198,19 @@ def prepare_data_av2(split: str):
                 # Transformed trajectory
                 src_agent_coordinate_tf = np.dot(rot_matrix, src_agent_coordinate.T).T
                 tgt_agent_coordinate_tf = np.dot(rot_matrix, tgt_agent_coordinate.T).T
-                # Transformed velocitys
-                src_agent_velocity_tf = np.dot(rot_matrix, src_agent_velocity.T).T
-                tgt_agent_velocity_tf = np.dot(rot_matrix, tgt_agent_velocity.T).T
-                src_agent_velocity_tf = src_agent_velocity_tf[:,0:2] # Get only the components
-                tgt_agent_velocity_tf = tgt_agent_velocity_tf[:,0:2]
                 # Transformed heading
                 src_agent_heading_tf = normalice_heading (src_agent_heading - focal_heading)
                 tgt_agent_heading_tf = normalice_heading (tgt_agent_heading - focal_heading)
+                # Transformed velocitys
+                src_agent_mod_velocity = np.sqrt( np.power(src_agent_velocity[:,0], 2) + np.power(src_agent_velocity[:,1], 2) )
+                tgt_agent_mod_velocity = np.sqrt( np.power(tgt_agent_velocity[:,0], 2) + np.power(tgt_agent_velocity[:,1], 2) )
+                src_agent_mod_velocity_x = src_agent_mod_velocity * np.cos (src_agent_heading_tf)
+                src_agent_mod_velocity_y = src_agent_mod_velocity * np.sin (src_agent_heading_tf)
+                tgt_agent_mod_velocity_x = tgt_agent_mod_velocity * np.cos (tgt_agent_heading_tf)
+                tgt_agent_mod_velocity_y = tgt_agent_mod_velocity * np.sin (tgt_agent_heading_tf)
+                
+                src_agent_velocity_tf = np.column_stack((src_agent_mod_velocity_x, src_agent_mod_velocity_y))
+                tgt_agent_velocity_tf = np.column_stack((tgt_agent_mod_velocity_x, tgt_agent_mod_velocity_y))
                 
                 # Vector heading
                 src_agent_vector_heading_tf = np.array([np.sin(src_agent_heading_tf), np.cos(src_agent_heading_tf)])
