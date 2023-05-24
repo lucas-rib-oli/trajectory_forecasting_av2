@@ -14,12 +14,12 @@ class minADE ():
         """_summary_
 
         Args:
-            pred_traj (torch.Tensor): Predicted trajectory [bs, K, pred_len, 2]
-            gt_traj (torch.Tensor): GT trajectory [bs, pred_len, 2]
+            pred_traj (torch.Tensor): Predicted trajectory [BS, A, K, F, out_feats]
+            gt_traj (torch.Tensor): GT trajectory [BS, A, F, out_feats]
         """
         num_traj = pred_traj.shape[2]
         gt_traj_overdim = gt_traj.unsqueeze(2).repeat(1, 1, num_traj, 1, 1)
-        ade = torch.norm(pred_traj - gt_traj_overdim, p=2, dim=-1).mean(-1)
+        ade = torch.norm(pred_traj[:,:,:,:, 0:2] - gt_traj_overdim[:,:,:,:, 0:2], p=2, dim=-1).mean(-1)
         min_ade, _ = torch.min(ade, dim=-1)
         min_ade = torch.mean(min_ade)
         return torch.mean(min_ade)
