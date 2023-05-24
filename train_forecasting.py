@@ -1,4 +1,5 @@
 
+import psutil
 import argparse
 import torch
 from torch import nn
@@ -136,6 +137,8 @@ class TransformerTrain ():
         # make any required directories
         if not os.path.isdir(tb_path):
             os.makedirs(tb_path)
+        if not os.path.isdir(self.save_path):
+            os.makedirs(self.save_path)
         self.tb_writer = SummaryWriter(log_dir=tb_path)
     # ===================================================================================== #
     def create_mask(self, src: torch.Tensor, tgt: torch.Tensor):
