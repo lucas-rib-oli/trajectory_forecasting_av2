@@ -2,3 +2,4 @@ from .transformer import TransformerEncoder, TransformerDecoder, TransformerEnco
 from .basic_modules import MLP
 from .vectornet import LaneNet
 from .basic_functions import generate_square_subsequent_mask
+from .axial_attention_module import AxialTransformerEncoder, AxialTransformerEncoderLayer
