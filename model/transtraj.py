@@ -5,6 +5,7 @@ import numpy as np
 import math
 from typing import Optional, Any, Union, Callable
 from model import TransformerEncoder, TransformerDecoder, TransformerEncoderLayer, TransformerDecoderLayer, MLP, LaneNet
+from model.axial_attention_module import AxialTransformerEncoder, AxialTransformerEncoderLayer
 
 class TransTraj (nn.Module):
     """Transformer with a linear embedding
@@ -45,16 +46,16 @@ class TransTraj (nn.Module):
         self.subgraph = LaneNet(lane_channels, subgraph_width, num_subgraph_layers)
         self.lanes_emb = LinearEmbedding(subgraph_width*2, d_model)
         lane_enc_layer = TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                    batch_first=True)
+                                                 batch_first=True)
         lane_dec_layer = TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
                                                  with_self_att=True,
                                                  batch_first=True)
         self.lane_encoder = TransformerEncoder(encoder_layer=lane_enc_layer, num_layers=N)
         self.lane_decoder = TransformerDecoder(decoder_layer=lane_dec_layer, num_layers=N)
         # ----------------------------------------------------------------------- #
-        # Use the vanilla Tranformer Encoder Layer
-        encoder_layer = TransformerEncoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
-                                                 batch_first=True)
+        # Use the Axial Tranformer Encoder Layer
+        encoder_layer = AxialTransformerEncoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout, num_dimensions = 2, embed_dim_index = -1,
+                                                      batch_first=True)
         decoder_layer = TransformerDecoderLayer (d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
                                                  with_self_att=True,
                                                  batch_first=True)
@@ -110,9 +111,9 @@ class TransTraj (nn.Module):
         """_summary_
 
         Args:
-            historic_traj (torch.Tensor): Historical trajectories [bs, A, 50, num_features]
-            future_traj (torch.Tensor): Future trajectories [bs, A, 60, num_features]
-            lanes (torch.Tensor): Polylines of lanes [bs, max_lanes_num, num_lines, lane_features]
+            historic_traj (torch.Tensor): Historical trajectories [BS, A, H, num_features]
+            future_traj (torch.Tensor): Future trajectories [BS, A, F, num_features]
+            lanes (torch.Tensor): Polylines of lanes [BS, max_lanes_num, num_lines, lane_features]
             src_mask (torch.Tensor): _description_
             tgt_mask (torch.Tensor): _description_
             src_padding_mask (Optional[torch.Tensor], optional): _description_. Defaults to None.
@@ -128,27 +129,27 @@ class TransTraj (nn.Module):
         num_features = historic_traj.shape[3]
         # ----------------------------------------------------------------------- #
         # Apply linear embedding with the positional encoding
-        historic_traj = self.enc_linear_embedding(historic_traj)        
+        historic_traj = self.enc_linear_embedding(historic_traj) # [BS, A, H, d_model]      
         historic_traj = self.pos_encoder(historic_traj)
         # tgt = self.dec_linear_embedding(tgt)
         # tgt = self.pos_decoder(tgt)
         
-        self.query_batches = self.query_embed.weight.view(1, 1, *self.query_embed.weight.shape).repeat(bs, num_agents, 1, 1)
-        memory_traj = self.encoder(historic_traj) # [bs, N history, Features]
-        out_traj = self.decoder (self.query_batches, memory_traj) # [bs, N history, Features]
+        memory_traj = self.encoder(historic_traj) # [BS, A, H, d_model]
+        self.query_batches = self.query_embed.weight.view(1, 1, *self.query_embed.weight.shape).repeat(bs, num_agents, 1, 1) # [BS, A, K, d_model] (k = number of trajectories)
+        out_traj = self.decoder (self.query_batches, memory_traj) # [BS, A, K, d_model]
         # ----------------------------------------------------------------------- #
         # Lane step
-        lanes_enc = self.process_lanes(lanes=lanes)
-        lanes_enc = self.lanes_emb(lanes_enc)
+        lanes_enc = self.process_lanes(lanes=lanes) # [BS, max_lanes_num, num_features]
+        lanes_enc = self.lanes_emb(lanes_enc) # [BS, max_lanes_num, num_features]
         lanes_mem = self.lane_encoder(lanes_enc)
-        lanes_mem = lanes_mem.unsqueeze(1).repeat(1, num_agents, 1, 1)
+        lanes_mem = lanes_mem.unsqueeze(1).repeat(1, num_agents, 1, 1) # [BS, A, max_lanes_num, num_features] -> Homogeinity
         out = self.lane_decoder(out_traj, lanes_mem) # out traj as target lane_mem as memory
         # ----------------------------------------------------------------------- #
         num_traj = out.shape[2] # Number of predictions (K)
         out = out.view (bs, num_agents, num_traj, -1)
         # Get the output i the expected dimensions
         pred: torch.Tensor = self.reg_mlp(out)
-        pred = pred.view(bs, num_agents, num_traj, -1, num_features) # [bs, N traj, Traj size, out feats(x, y, ...)]
+        pred = pred.view(bs, num_agents, num_traj, -1, num_features) # [bs, A, K, F, out feats]
         num_traj = pred.shape[1] # Number of predictions (K)
         
         cls_h = self.cls_FFN(out)
