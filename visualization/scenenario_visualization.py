@@ -139,14 +139,17 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
             transformed_object_state.heading = normalice_heading(object_state.heading - last_obs_focal_heading)
             # Transform velocity
             vx, vy = object_state.velocity
-            velocity = np.array([vx, vy, 0.0])
-            transformed_object_state.velocity = np.dot(rot_matrix, velocity)
+            vel_mod = np.sqrt(np.power(vx, 2) + np.power(vy, 2))
+            # velocity = np.array([vx, vy, 0.0])
+            # transformed_object_state.velocity = np.dot(rot_matrix, velocity)[0:2] # Get only XY
+            velocity = np.array([vel_mod * np.cos(transformed_object_state.heading), vel_mod * np.sin(transformed_object_state.heading)])
+            transformed_object_state.velocity = velocity # Get only XY
             # Set the transformed pos
             transformed_object_state.position = transformed_position[:2]
             # Save
             transformed_object_states.append(transformed_object_state)
         track.object_states = transformed_object_states
-    _plot_actor_tracks(ax, scenario, 49)
+    _plot_actor_tracks(ax, scenario, 30)
     # ----------------------------------------------------------------------- #
     # Transform map to target-centric
     for lane_segment in static_map.vector_lane_segments.values():
@@ -184,7 +187,23 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         _plot_polylines([transformed_edge1_xyz, transformed_edge2_xyz ], alpha=1.0, color=_LANE_SEGMENT_COLOR)
         
     # ----------------------------------------------------------------------- #
+    # Dibujar el vector del eje X
+    arrow_x = ax.arrow(0, 0, 10, 0, head_width=3.0, head_length=3.0, fc='red', ec='red')
+    ax.text(10.1, 2.5, 'X', color='red')
+
+    # Dibujar el vector del eje Y
+    arrow_y = ax.arrow(0, 0, 0, 10, head_width=3.0, head_length=3.0, fc='green', ec='green')
+    ax.text(2.0, 10.1, 'Y', color='green')
+    
+    arrow_x.set_zorder(10)
+    arrow_y.set_zorder(10)
+    
+    # Etiquetas de los ejes
+    ax.set_xlabel('Eje X')
+    ax.set_ylabel('Eje Y')
+    # ----------------------------------------------------------------------- #
     plt.show()
+    exit(0)
     for timestep in range(_OBS_DURATION_TIMESTEPS + _PRED_DURATION_TIMESTEPS):
         _, ax = plt.subplots()
 
@@ -281,6 +300,15 @@ def _plot_actor_tracks(ax: plt.Axes, scenario: ArgoverseScenario, timestep: int)
         actor_headings: NDArrayFloat = np.array(
             [object_state.heading for object_state in track.object_states if object_state.timestep <= timestep]
         )
+        actor_velocities = np.array(
+            [list (object_state.velocity) for object_state in track.object_states if object_state.timestep <= timestep]
+        )
+        if track.category == TrackCategory.FOCAL_TRACK or track.category == TrackCategory.SCORED_TRACK:
+            vel_magnitude = np.sqrt(np.power(actor_velocities[timestep, 0], 2) + np.power(actor_velocities[timestep, 1], 2))
+            mask = vel_magnitude > 0
+            u = np.where(mask, actor_velocities[timestep, 0] / vel_magnitude, 1)
+            v = np.where(mask, actor_velocities[timestep, 1] / vel_magnitude, 1)
+            ax.quiver(actor_trajectory[timestep,0], actor_trajectory[timestep,1], u, v, scale=5)
         
         # Plot polyline for focal agent location history
         track_color = _DEFAULT_ACTOR_COLOR
@@ -295,8 +323,6 @@ def _plot_actor_tracks(ax: plt.Axes, scenario: ArgoverseScenario, timestep: int)
         elif track.object_type in _STATIC_OBJECT_TYPES:
             continue
 
-        print ('-'*89)
-        print(actor_headings[-1])
         # Plot bounding boxes for all vehicles and cyclists
         if track.object_type == ObjectType.VEHICLE:
             
@@ -374,11 +400,12 @@ def _plot_actor_bounding_box(
     pivot_x = cur_location[0] - (d / 2) * math.cos(heading + theta_2)
     pivot_y = cur_location[1] - (d / 2) * math.sin(heading + theta_2)
 
-    vehicle_bounding_box = Rectangle(
+    rect = vehicle_bounding_box = Rectangle(
         (pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), color=color, zorder=_BOUNDING_BOX_ZORDER
     )
-    ax.add_patch(vehicle_bounding_box)
+    rect = ax.add_patch(vehicle_bounding_box)
+    rect.set_zorder(5)
 
 if __name__ == '__main__':
-    scenario, static_map = get_av2_data(split=args.split, idx=250)
+    scenario, static_map = get_av2_data(split=args.split, idx=500)
     visualize_scenario (scenario, static_map)
