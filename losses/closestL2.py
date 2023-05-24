@@ -7,7 +7,7 @@ class ClosestL2Loss (nn.Module):
         super().__init__()
         
         self.reg_loss_fn = nn.PairwiseDistance(p=2)
-        self.class_loss_fn = nn.CrossEntropyLoss()
+        self.class_loss_fn = nn.BCELoss()
     # ===================================================================================== #   
     def get_one_hot_vector_by_distance (self, pred_trajs: torch.Tensor, gt_trajs: torch.Tensor) -> torch.Tensor:
         # Get the distance between the prediction and the gt trajectories
