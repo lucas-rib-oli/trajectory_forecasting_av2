@@ -2,9 +2,9 @@
 train = dict(
     device = "cuda:0",
     num_workers = 8,
-    experiment_name = "wSelfAttAndVelocites", # closestLoss
+    experiment_name = "AxialAttention", # closestLoss
     num_epochs = 600,
-    batch_size = 180,
+    batch_size = 128,
     resume_train = False,
 )
 
@@ -15,9 +15,9 @@ optimizer = dict(
 )
 
 data = dict(  
-    name_pickle = "agents",
-    path_2_save_weights = 'models_weights/map_implementation/',
-    tensorboard_path = 'tensorboard/agent_interectation',
+    name_pickle = "SCORED_TRACKS",
+    path_2_save_weights = 'models_weights/axial_attention/',
+    tensorboard_path = 'tensorboard/axial_attention/',
 )
 
 model = dict(
