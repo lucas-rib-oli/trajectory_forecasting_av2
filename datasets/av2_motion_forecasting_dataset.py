@@ -50,7 +50,7 @@ class Av2MotionForecastingDataset (Dataset):
     def __init__(self, dataset_dir: str, split: str = "train", output_traj_size: int = 8, 
                  name_pickle: str = 'scored'):
         # Check if exists processed trajectories
-        self.path_2_scenes_data = os.path.join('pickle_data/', 'trajectories', split, 'data_' + name_pickle + '.pickle')
+        self.path_2_scenes_data = os.path.join(dataset_dir, 'trajectories', split, 'data_' + name_pickle + '.pickle')
         # Read scenes data
         if os.path.exists(self.path_2_scenes_data):
             with open(self.path_2_scenes_data, 'rb') as f:
@@ -75,7 +75,7 @@ class Av2MotionForecastingDataset (Dataset):
         """
         sample = {}
         scene_traj_data = self.scenes_data[idx]['agents']
-        map_path = self.scenes_data[idx]['map_path']
+        map_path = os.path.join ('/raid/datasets/argoverse2', self.scenes_data[idx]['map_path'])
         historic_trajectories = []
         future_trajectories = []
         historic_offset_trajectories = []

@@ -12,7 +12,7 @@ class TransTraj (nn.Module):
     Args:
         nn (_type_): _description_
     """
-    def __init__(self, pose_dim: int,
+    def __init__(self, pose_dim: int, n_future: int,
                  d_model = 512, nhead = 8, N = 6, dim_feedforward = 2048, dropout=0.1):
         """_summary_
 
@@ -37,9 +37,11 @@ class TransTraj (nn.Module):
         
         self.dec_linear_embedding = LinearEmbedding(pose_dim, d_model)
         self.pos_decoder = PositionalEncoding(d_model, dropout)
+        # Trajectory proposal
+        self.query_embed = nn.Embedding(n_future, d_model) 
         
         # Create a Transformer module (in the paper ins only the middle box, not include linear output in the decoder)
-        self.transformer = nn.Transformer (d_model=d_model, nhead=nhead, num_encoder_layers=N, num_decoder_layers=N, dim_feedforward=dim_feedforward, dropout=dropout, batch_first=True, activation='gelu')
+        self.transformer = nn.Transformer (d_model=d_model, nhead=nhead, num_encoder_layers=N, num_decoder_layers=N, dim_feedforward=dim_feedforward, dropout=dropout, batch_first=True, activation='relu')
         
         # self.linear_out = nn.Linear(d_model, dec_out_size)
         d_model_2 = int (d_model / 2)
@@ -79,11 +81,13 @@ class TransTraj (nn.Module):
         # Apply linear embedding with the positional encoding
         src = self.enc_linear_embedding(historic_traj)
         src = self.pos_encoder(src)
-        tgt = self.dec_linear_embedding(future_traj)
-        tgt = self.pos_decoder(tgt)
+        # ----------------------------------------------------------------------- #
+        # Repeat BS times
+        self.query_batches = self.query_embed.weight.view(1, *self.query_embed.weight.shape).repeat(future_traj.shape[0], 1, 1)
+        self.query_batches = self.pos_decoder(self.query_batches)
         # ----------------------------------------------------------------------- #
         # Transformer step
-        output = self.transformer(src, tgt, src_mask=src_mask, tgt_mask=tgt_mask, src_key_padding_mask=src_padding_mask, 
+        output = self.transformer(src, self.query_batches, src_mask=src_mask, tgt_mask=tgt_mask, src_key_padding_mask=src_padding_mask, 
                                   tgt_key_padding_mask=tgt_padding_mask, memory_key_padding_mask=src_padding_mask)
         # ----------------------------------------------------------------------- #
         # Get the output i the expected dimensions

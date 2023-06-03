@@ -15,18 +15,24 @@ from av2.datasets.motion_forecasting.data_schema import ArgoverseScenario, Objec
 from av2.map.map_api import ArgoverseStaticMap
 from av2.utils.typing import NDArrayFloat, NDArrayInt
 from av2.geometry.interpolate import interp_arc
+from joblib import Parallel, delayed
 # ===================================================================================== #
 parser = argparse.ArgumentParser(description='Data converter arg parser')
 parser.add_argument('dataset', metavar='av2', help='name of the dataset')
 parser.add_argument(
     '--root-path',
     type=str,
-    default='/datasets/argoverse2/',
+    default='/raid/datasets/argoverse2/',
     help='specify the root path of dataset')
+parser.add_argument(
+    '--output_path',
+    type=str,
+    default='/raid/datasets/argoverse2/pickle_data/',
+    help='Filename of the data')
 parser.add_argument(
     '--output_filename',
     type=str,
-    default='FOCAL_TRACK',
+    default='SCORED_TRACKS',
     help='Filename of the data')
 
 args = parser.parse_args()
@@ -67,7 +73,7 @@ def normalice_heading (angle):
     return norm_angle
 # ===================================================================================== #
 def prepare_data_av2(split: str):
-    argoverse_scenario_dir = os.path.join(args.root_path, 'motion_forecasting', split)
+    argoverse_scenario_dir = os.path.join(args.root_path, split)
     argoverse_scenario_dir = Path(argoverse_scenario_dir)
     all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
     # ----------------------------------------------------------------------- #
@@ -94,10 +100,10 @@ def prepare_data_av2(split: str):
             if track.object_type != ObjectType.VEHICLE or track.track_id == "AV":
                 continue
             # Only get the 'FOCAL TACK' and 'SCORED CARS'
-            # if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
-            #     continue
-            if track.category != data_schema.TrackCategory.FOCAL_TRACK:
+            if track.category != data_schema.TrackCategory.FOCAL_TRACK and track.category != data_schema.TrackCategory.SCORED_TRACK:
                 continue
+            # if track.category != data_schema.TrackCategory.FOCAL_TRACK:
+                # continue
             
             # Get timesteps for which actor data is valid
             actor_timesteps: NDArrayInt = np.array( [object_state.timestep for object_state in track.object_states] )
@@ -142,12 +148,11 @@ def prepare_data_av2(split: str):
             for id, lane_segment in static_map.vector_lane_segments.items():
                 left_lane_boundary = lane_segment.left_lane_boundary.xyz
                 right_lane_boundary = lane_segment.right_lane_boundary.xyz
-                
-                # centerline = static_map.get_lane_segment_centerline(id)
+                centerline = static_map.get_lane_segment_centerline(id)
                 
                 left_lane_boundary = np.append(left_lane_boundary, np.ones((left_lane_boundary.shape[0], 1)), axis=1)
                 right_lane_boundary = np.append(right_lane_boundary, np.ones((right_lane_boundary.shape[0], 1)), axis=1)
-                # centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
+                centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
                 # Substract the center
                 left_lane_boundary = left_lane_boundary - np.append (focal_coordinate, [0, 0])
                 right_lane_boundary = right_lane_boundary - np.append (focal_coordinate, [0, 0])
@@ -155,13 +160,14 @@ def prepare_data_av2(split: str):
                 # Rotate
                 left_lane_boundary = np.dot(rot_matrix, left_lane_boundary.T).T
                 right_lane_boundary = np.dot(rot_matrix, right_lane_boundary.T).T
-                # centerline = np.dot(rot_matrix, centerline.T).T
+                centerline = np.dot(rot_matrix, centerline.T).T
                 # Interpolate data to get all lines with the same size
                 left_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=left_lane_boundary[:, :3])
                 right_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=right_lane_boundary[:, :3])
                 
                 # save the data
                 lane_data = {"ID": lane_segment.id,
+                             "centerline": centerline[0:3],
                              "left_lane_boundary": left_lane_boundary,
                              "right_lane_boundary": right_lane_boundary,
                              "is_intersection": lane_segment.is_intersection,
@@ -178,8 +184,8 @@ def prepare_data_av2(split: str):
             for track_id in raw_scene_tgt_actor_traj_id.keys():
                 src_agent_coordinate = raw_scene_src_actor_traj_id[track_id][:, 0:2]
                 tgt_agent_coordinate = raw_scene_tgt_actor_traj_id[track_id][:, 0:2]
-                src_agent_heading = raw_scene_src_actor_traj_id[track_id][:,3]
-                tgt_agent_heading = raw_scene_tgt_actor_traj_id[track_id][:,3]
+                src_agent_heading = raw_scene_src_actor_traj_id[track_id][:,2]
+                tgt_agent_heading = raw_scene_tgt_actor_traj_id[track_id][:,2]
                 
                 src_agent_velocity = raw_scene_src_actor_traj_id[track_id][:, 3:]
                 tgt_agent_velocity = raw_scene_tgt_actor_traj_id[track_id][:, 3:]
@@ -190,10 +196,6 @@ def prepare_data_av2(split: str):
                 tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_zeros_vector, axis=1)
                 tgt_agent_coordinate = np.append (tgt_agent_coordinate, tgt_ones_vector, axis=1)
                 
-                src_agent_velocity = np.append (src_agent_velocity, src_zeros_vector, axis=1)
-                src_agent_velocity = np.append (src_agent_velocity, src_ones_vector, axis=1)
-                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_zeros_vector, axis=1)
-                tgt_agent_velocity = np.append (tgt_agent_velocity, tgt_ones_vector, axis=1)
                 # Substract the center
                 src_agent_coordinate = src_agent_coordinate - np.append (focal_coordinate, [0, 0])
                 tgt_agent_coordinate = tgt_agent_coordinate - np.append (focal_coordinate, [0, 0])
@@ -201,14 +203,19 @@ def prepare_data_av2(split: str):
                 # Transformed trajectory
                 src_agent_coordinate_tf = np.dot(rot_matrix, src_agent_coordinate.T).T
                 tgt_agent_coordinate_tf = np.dot(rot_matrix, tgt_agent_coordinate.T).T
-                # Transformed velocitys
-                src_agent_velocity_tf = np.dot(rot_matrix, src_agent_velocity.T).T
-                tgt_agent_velocity_tf = np.dot(rot_matrix, tgt_agent_velocity.T).T
-                src_agent_velocity_tf = src_agent_velocity_tf[:,0:2] # Get only the components
-                tgt_agent_velocity_tf = tgt_agent_velocity_tf[:,0:2]
                 # Transformed heading
                 src_agent_heading_tf = normalice_heading (src_agent_heading - focal_heading)
                 tgt_agent_heading_tf = normalice_heading (tgt_agent_heading - focal_heading)
+                # Transformed velocitys
+                src_agent_mod_velocity = np.sqrt( np.power(src_agent_velocity[:,0], 2) + np.power(src_agent_velocity[:,1], 2) )
+                tgt_agent_mod_velocity = np.sqrt( np.power(tgt_agent_velocity[:,0], 2) + np.power(tgt_agent_velocity[:,1], 2) )
+                src_agent_mod_velocity_x = src_agent_mod_velocity * np.cos (src_agent_heading_tf)
+                src_agent_mod_velocity_y = src_agent_mod_velocity * np.sin (src_agent_heading_tf)
+                tgt_agent_mod_velocity_x = tgt_agent_mod_velocity * np.cos (tgt_agent_heading_tf)
+                tgt_agent_mod_velocity_y = tgt_agent_mod_velocity * np.sin (tgt_agent_heading_tf)
+                
+                src_agent_velocity_tf = np.column_stack((src_agent_mod_velocity_x, src_agent_mod_velocity_y))
+                tgt_agent_velocity_tf = np.column_stack((tgt_agent_mod_velocity_x, tgt_agent_mod_velocity_y))
                 
                 # Vector heading
                 src_agent_vector_heading_tf = np.array([np.sin(src_agent_heading_tf), np.cos(src_agent_heading_tf)])
@@ -236,7 +243,7 @@ def prepare_data_av2(split: str):
                 scene_agents_data.append (agent_data)
             # ----------------------------------------------------------------------- #
             # Save map data
-            path_2_save_scenes_map = Path (os.path.join('pickle_data/map/', split, static_map_path.parts[-2], static_map_path.parts[-1].replace('.json', '.pickle')))
+            path_2_save_scenes_map = Path (os.path.join(args.output_path, 'map', split, static_map_path.parts[-2], static_map_path.parts[-1].replace('.json', '.pickle')))
             if not path_2_save_scenes_map.parents[0].exists():
                 # Create directory
                 path_2_save_scenes_map.parents[0].mkdir(parents=True)
@@ -260,6 +267,17 @@ def prepare_data_av2(split: str):
             #     tgt_traj = agent_data['future']
             #     plt.plot(src_traj[:, 0], src_traj[:, 1], "-", linewidth=1.0, color='b', alpha=1.0)
             #     plt.plot(tgt_traj[:, 0], tgt_traj[:, 1], "-", linewidth=1.0, color='g', alpha=1.0)
+            #     tgt_vel_mod = np.sqrt(np.power(tgt_traj[:, 4], 2) + np.power(tgt_traj[:, 5], 2))
+            #     mask = tgt_vel_mod > 0
+            #     u_tgt = np.where(mask, tgt_traj[:, 4] / tgt_vel_mod, 0)
+            #     v_tgt = np.where(mask, tgt_traj[:, 5] / tgt_vel_mod, 0)
+            #     plt.quiver(tgt_traj[:, 0], tgt_traj[:, 1], u_tgt, v_tgt, scale=60)
+                
+            #     src_vel_mod = np.sqrt(np.power(src_traj[:, 4], 2) + np.power(src_traj[:, 5], 2))
+            #     mask = src_vel_mod > 0
+            #     u_src = np.where(mask, src_traj[:, 4] / src_vel_mod, 0)
+            #     v_src = np.where(mask, src_traj[:, 5] / src_vel_mod, 0)
+            #     plt.quiver(src_traj[:, 0], src_traj[:, 1], u_src, v_src, scale=60)
             # plt.show()
         else:
             # Not found focal agent or target agent
@@ -272,7 +290,7 @@ def prepare_data_av2(split: str):
     # Print info
     print (Fore.CYAN + 'Size scene data: ' + Fore.WHITE + str(len(all_scene_data)) + Fore.RESET)
     # ----------------------------------------------------------------------- #
-    parent_path = Path (os.path.join('pickle_data/', 'trajectories', split))
+    parent_path = Path (os.path.join(args.output_path, 'trajectories', split))
     if not parent_path.exists():
         parent_path.mkdir(parents=True)
     # Save the data in a pickle

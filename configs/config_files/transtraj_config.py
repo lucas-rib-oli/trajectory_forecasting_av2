@@ -1,8 +1,8 @@
 
 train = dict(
     device = "cuda:0",
-    num_workers = 16,
-    experiment_name = "seq2seq_TFM",
+    num_workers = 32,
+    experiment_name = "trajectory_proposal_tgtMasked_TFM",
     num_epochs = 600,
     batch_size = 512,
     resume_train = False,
@@ -16,8 +16,8 @@ optimizer = dict(
 
 data = dict(  
     name_pickle = "FOCAL_TRACK",
-    path_2_save_weights = 'models_weights/seq2seq/',
-    tensorboard_path = 'tensorboard/seq2seq',
+    path_2_save_weights = 'models_weights/embeddings/',
+    tensorboard_path = 'tensorboard/embeddings/',
 )
 
 model = dict(

@@ -23,7 +23,7 @@ def str_to_bool(value):
     elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
         return True
 parser = argparse.ArgumentParser()
-parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
+parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 args = parser.parse_args()
 # ===================================================================================== #
@@ -93,7 +93,7 @@ class TransformerTrain ():
         print (Fore.CYAN + 'Number of validation sequences: ' + Fore.WHITE + str(len(self.val_data)) + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Get the model
-        self.model = TransTraj (pose_dim=self.pose_dim, d_model=self.d_model, nhead=self.nhead, 
+        self.model = TransTraj (pose_dim=self.pose_dim, n_future=self.future_size, d_model=self.d_model, nhead=self.nhead, 
                                 N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # Get the optimizer
         # self.optimizer = NoamOpt( self.d_model, len(self.train_dataloader) * self.opt_warmup,
@@ -159,17 +159,14 @@ class TransformerTrain ():
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
-                # Now we shift the future_traj by one so with the <s0> we predict s1
-                tgt_input = future_traj[:,:-1]
-                tgt_expected = future_traj[:,1:]
                 # ----------------------------------------------------------------------- #
                 # Generate a square mask for the sequence
-                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, tgt_input)
+                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred = self.model (historic_traj, tgt_input, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, tgt_expected)
+                pred = self.model (historic_traj, future_traj, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                loss = self.loss_fn(pred, future_traj)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
@@ -223,37 +220,21 @@ class TransformerTrain ():
                 future_traj = future_traj.to(self.device)
                 # ----------------------------------------------------------------------- #
                 # Generate a square mask for the sequence
-                src_seq_len = historic_traj.size()[1]
-                src_mask = torch.zeros((src_seq_len, src_seq_len),device=self.device).type(torch.bool)
+                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                 # ----------------------------------------------------------------------- #
-                # Encode step
-                memory = self.model.encode(historic_traj, src_mask).to(self.device)
+                # Output model
+                pred = self.model (historic_traj, future_traj, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=None, tgt_padding_mask=None)
                 # ----------------------------------------------------------------------- #
-                dec_inp = future_traj[:, 0, :]
-                # Implement one dimension for the tranformer to be able to deal with the input decoder
-                dec_inp = dec_inp.unsqueeze(1).to(self.device)
-                # ----------------------------------------------------------------------- #
-                # Apply Greedy Code
-                for _ in range (0, self.future_size - 1):
-                    # Get target mask
-                    tgt_mask = self.generate_square_subsequent_mask(dec_inp.size()[1])
-                    # Get tokens
-                    out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
-                    # Generate the prediction
-                    prediction = self.model.generate ( out ).to(self.device)
-                    # Concatenate
-                    dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
-                tgt_expected = future_traj[:, 1:]
-                output_expected = dec_inp[:, 1:]
-                loss = self.loss_fn(output_expected, tgt_expected)
+               
+                loss = self.loss_fn(pred, future_traj)
                 
                 validation_losses.append(loss.detach().cpu().numpy())
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                min_ade = self.minADE.compute(output_expected, tgt_expected)
-                min_fde = self.minFDE.compute(output_expected, tgt_expected)
-                mr_loss = self.MR.compute(output_expected, tgt_expected)
+                min_ade = self.minADE.compute(pred, future_traj)
+                min_fde = self.minFDE.compute(pred, future_traj)
+                mr_loss = self.MR.compute(pred, future_traj)
                 minADE_metrics.append (min_ade.detach().cpu().numpy())
                 minFDE_metrics.append (min_fde.detach().cpu().numpy())
                 mr_metrics.append (mr_loss.detach().cpu().numpy())
