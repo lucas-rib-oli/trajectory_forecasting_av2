@@ -120,10 +120,7 @@ class TransformerTrain ():
             self.load_checkpoint('check')
         # ----------------------------------------------------------------------- #
         # Tensorboard Writer
-        if self.resume_train:
-            tb_path = os.path.join(self.tensorboard_path, self.experiment_name + "_resumed")
-        else:
-            tb_path = os.path.join(self.tensorboard_path, self.experiment_name)
+        tb_path = os.path.join(self.tensorboard_path, self.experiment_name)
         # make any required directories
         if not os.path.isdir(tb_path):
             os.makedirs(tb_path)
