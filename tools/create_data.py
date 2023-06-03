@@ -22,8 +22,13 @@ parser.add_argument('dataset', metavar='av2', help='name of the dataset')
 parser.add_argument(
     '--root-path',
     type=str,
-    default='/datasets/argoverse2/',
+    default='/raid/datasets/argoverse2/',
     help='specify the root path of dataset')
+parser.add_argument(
+    '--output_path',
+    type=str,
+    default='/raid/datasets/argoverse2/pickle_data/',
+    help='Filename of the data')
 parser.add_argument(
     '--output_filename',
     type=str,
@@ -68,7 +73,7 @@ def normalice_heading (angle):
     return norm_angle
 # ===================================================================================== #
 def prepare_data_av2(split: str):
-    argoverse_scenario_dir = os.path.join(args.root_path, 'motion_forecasting', split)
+    argoverse_scenario_dir = os.path.join(args.root_path, split)
     argoverse_scenario_dir = Path(argoverse_scenario_dir)
     all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
     # ----------------------------------------------------------------------- #
@@ -147,7 +152,7 @@ def prepare_data_av2(split: str):
                 
                 left_lane_boundary = np.append(left_lane_boundary, np.ones((left_lane_boundary.shape[0], 1)), axis=1)
                 right_lane_boundary = np.append(right_lane_boundary, np.ones((right_lane_boundary.shape[0], 1)), axis=1)
-                # centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
+                centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
                 # Substract the center
                 left_lane_boundary = left_lane_boundary - np.append (focal_coordinate, [0, 0])
                 right_lane_boundary = right_lane_boundary - np.append (focal_coordinate, [0, 0])
@@ -155,14 +160,14 @@ def prepare_data_av2(split: str):
                 # Rotate
                 left_lane_boundary = np.dot(rot_matrix, left_lane_boundary.T).T
                 right_lane_boundary = np.dot(rot_matrix, right_lane_boundary.T).T
-                # centerline = np.dot(rot_matrix, centerline.T).T
+                centerline = np.dot(rot_matrix, centerline.T).T
                 # Interpolate data to get all lines with the same size
                 left_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=left_lane_boundary[:, :3])
                 right_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=right_lane_boundary[:, :3])
                 
                 # save the data
                 lane_data = {"ID": lane_segment.id,
-                             "centerline": centerline,
+                             "centerline": centerline[0:3],
                              "left_lane_boundary": left_lane_boundary,
                              "right_lane_boundary": right_lane_boundary,
                              "is_intersection": lane_segment.is_intersection,
@@ -238,7 +243,7 @@ def prepare_data_av2(split: str):
                 scene_agents_data.append (agent_data)
             # ----------------------------------------------------------------------- #
             # Save map data
-            path_2_save_scenes_map = Path (os.path.join('pickle_data/map/', split, static_map_path.parts[-2], static_map_path.parts[-1].replace('.json', '.pickle')))
+            path_2_save_scenes_map = Path (os.path.join(args.output_path, 'map', split, static_map_path.parts[-2], static_map_path.parts[-1].replace('.json', '.pickle')))
             if not path_2_save_scenes_map.parents[0].exists():
                 # Create directory
                 path_2_save_scenes_map.parents[0].mkdir(parents=True)
@@ -285,7 +290,7 @@ def prepare_data_av2(split: str):
     # Print info
     print (Fore.CYAN + 'Size scene data: ' + Fore.WHITE + str(len(all_scene_data)) + Fore.RESET)
     # ----------------------------------------------------------------------- #
-    parent_path = Path (os.path.join('pickle_data/', 'trajectories', split))
+    parent_path = Path (os.path.join(args.output_path, 'trajectories', split))
     if not parent_path.exists():
         parent_path.mkdir(parents=True)
     # Save the data in a pickle
