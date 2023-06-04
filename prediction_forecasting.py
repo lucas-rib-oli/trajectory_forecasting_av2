@@ -56,13 +56,8 @@ def str_to_bool(value):
         return True
 parser = argparse.ArgumentParser()
 parser.add_argument('save_figs', type=str_to_bool, default=False, help='Allow to save the plots')
-parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
+parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_save_figs', type=str, default='/home/lribeiro/TFM/resultados/03.04.2023', help='Path where the plots will be stored')
-parser.add_argument(
-    '--root-path',
-    type=str,
-    default='/datasets/argoverse2/',
-    help='specify the root path of dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 args = parser.parse_args()
 # ===================================================================================== #
