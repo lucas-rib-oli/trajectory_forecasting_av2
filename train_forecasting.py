@@ -165,7 +165,7 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred = self.model (historic_traj, future_traj, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred = self.model (historic_traj, future_traj, src_mask=src_mask, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
                 loss = self.loss_fn(pred, future_traj)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
@@ -223,7 +223,7 @@ class TransformerTrain ():
                 src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                 # ----------------------------------------------------------------------- #
                 # Output model
-                pred = self.model (historic_traj, future_traj, src_mask=src_mask, tgt_mask=tgt_mask, src_padding_mask=None, tgt_padding_mask=None)
+                pred = self.model (historic_traj, future_traj, src_mask=src_mask, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None)
                 # ----------------------------------------------------------------------- #
                 # Loss
                 loss = self.loss_fn(pred, future_traj)
