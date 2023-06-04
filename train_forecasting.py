@@ -23,7 +23,7 @@ def str_to_bool(value):
     elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
         return True
 parser = argparse.ArgumentParser()
-parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
+parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 args = parser.parse_args()
 # ===================================================================================== #
@@ -83,11 +83,11 @@ class TransformerTrain ():
         # Datos para entrenamiento
         self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', output_traj_size=self.future_size, 
                                                        name_pickle=self.name_pickle)
-        self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, collate_fn=collate_fn)
+        self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # Datos para validación 
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
                                                      name_pickle=self.name_pickle)
-        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, collate_fn=collate_fn)
+        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
         print (Fore.CYAN + 'Number of training sequences: ' + Fore.WHITE + str(len(self.train_data)) + Fore.RESET)
         print (Fore.CYAN + 'Number of validation sequences: ' + Fore.WHITE + str(len(self.val_data)) + Fore.RESET)
@@ -130,6 +130,8 @@ class TransformerTrain ():
         if not os.path.isdir(tb_path):
             os.makedirs(tb_path)
         self.tb_writer = SummaryWriter(log_dir=tb_path)
+        if not os.path.isdir(self.save_path):
+            os.makedirs(self.save_path)
     # ===================================================================================== #
     def generate_square_subsequent_mask(self, sz: int) -> torch.Tensor:
         """Generates an upper-triangular matrix of -inf, with zeros on diag."""
@@ -157,16 +159,14 @@ class TransformerTrain ():
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
                 # Get the data from the dataloader
-                historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
-                future_traj: torch.Tensor = data['future']
-                offset_future_traj: torch.Tensor = data['offset_future']
-                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1) # Delete Z-coordinate and ID
-                
+                historic_traj: torch.Tensor = data['historic'].squeeze() # (bs, sequence length, feature number)
+                future_traj: torch.Tensor = data['future'].squeeze()
+                offset_future_traj: torch.Tensor = data['offset_future'].squeeze()
+                                
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj[:,:,:2].to(self.device)
+                future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
-                lanes = lanes.to(self.device)
                 
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
@@ -178,7 +178,7 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred, conf = self.model (historic_traj, future_traj, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
                 loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
@@ -228,30 +228,25 @@ class TransformerTrain ():
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
-                historic_traj: torch.Tensor = data['historic']
-                future_traj: torch.Tensor = data['future']
-                offset_future_traj: torch.Tensor = data['offset_future']
-                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1) # Delete Z-coordinate and ID
+                historic_traj: torch.Tensor = data['historic'].squeeze()
+                future_traj: torch.Tensor = data['future'].squeeze()
+                offset_future_traj: torch.Tensor = data['offset_future'].squeeze()
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj[:,:,:2].to(self.device)
+                future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
-                lanes = lanes.to(self.device)
-                # ----------------------------------------------------------------------- #
-                # Generate a square mask for the sequence
-                src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred, conf = self.model (historic_traj, future_traj, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
                 loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 validation_losses.append(loss.detach().cpu().numpy())
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                min_ade = self.minADE.compute(pred, future_traj[:,:,:2])
-                min_fde = self.minFDE.compute(pred, future_traj[:,:,:2])
-                mr_loss = self.MR.compute(pred, future_traj[:,:,:2])
+                min_ade = self.minADE.compute(pred[:,:,:,:2], future_traj[:,:,:2])
+                min_fde = self.minFDE.compute(pred[:,:,:,:2], future_traj[:,:,:2])
+                mr_loss = self.MR.compute(pred[:,:,:,:2], future_traj[:,:,:2])
                 minADE_metrics.append (min_ade.detach().cpu().numpy())
                 minFDE_metrics.append (min_fde.detach().cpu().numpy())
                 mr_metrics.append (mr_loss.detach().cpu().numpy())
