@@ -15,7 +15,7 @@ from model.NoamOpt import NoamOpt
 from pathlib import Path
 from configs import Config
 from losses import ClosestL2Loss
-from metrics import minADE, minFDE, MR
+from metrics import Av2Metrics
 # ===================================================================================== #
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -114,9 +114,7 @@ class TransformerTrain ():
         self.best_validation_loss = np.Inf
         # ----------------------------------------------------------------------- #
         # Metris
-        self.MR = MR()
-        self.minADE = minADE()
-        self.minFDE = minFDE()
+        self.av2Metrics = Av2Metrics()
         # ----------------------------------------------------------------------- #
         if self.resume_train:
             self.load_checkpoint('check')
@@ -222,9 +220,15 @@ class TransformerTrain ():
         self.model.eval()
         
         validation_losses = []
+        
         minADE_metrics = []
         minFDE_metrics = []
         mr_metrics = []
+        p_minADE_metrics = []
+        p_minFDE_metrics = []
+        p_MR_metrics = []
+        brier_minADE_metrics = []
+        brier_minFDE_metrics = []
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
@@ -244,12 +248,27 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                min_ade = self.minADE.compute(pred[:,:,:,:2], future_traj[:,:,:2])
-                min_fde = self.minFDE.compute(pred[:,:,:,:2], future_traj[:,:,:2])
-                mr_loss = self.MR.compute(pred[:,:,:,:2], future_traj[:,:,:2])
-                minADE_metrics.append (min_ade.detach().cpu().numpy())
-                minFDE_metrics.append (min_fde.detach().cpu().numpy())
-                mr_metrics.append (mr_loss.detach().cpu().numpy())
+                
+                av2_metrics_dict = self.av2Metrics.get_metrics(pred[:,:,:,:2],  future_traj[:,:,:2], conf)
+                
+                minADE = av2_metrics_dict["minADE"]
+                minFDE = av2_metrics_dict["minFDE"]
+                MR = av2_metrics_dict["MR"]
+                p_minADE = av2_metrics_dict["p-minADE"]
+                p_minFDE = av2_metrics_dict["p-minFDE"]
+                p_MR = av2_metrics_dict["p-MR"]
+                brier_minADE = av2_metrics_dict["brier-minADE"]
+                brier_minFDE = av2_metrics_dict["brier-minFDE"]
+                
+                minADE_metrics.append (minADE.detach().cpu().numpy())
+                minFDE_metrics.append (minFDE.detach().cpu().numpy())
+                mr_metrics.append (MR.detach().cpu().numpy())
+                p_minADE_metrics.append (p_minADE.detach().cpu().numpy())
+                p_minFDE_metrics.append (p_minFDE.detach().cpu().numpy())
+                p_MR_metrics.append (p_MR.detach().cpu().numpy())
+                brier_minADE_metrics.append (brier_minADE.detach().cpu().numpy())
+                brier_minFDE_metrics.append (brier_minFDE.detach().cpu().numpy())
+                
                 
         # save checkpoint model
         self.save_model('check')
@@ -273,6 +292,11 @@ class TransformerTrain ():
         self.tb_writer.add_scalar('minADE epoch/validation', np.mean(minADE_metrics), self.epoch)
         self.tb_writer.add_scalar('minFDE epoch/validation', np.mean(minFDE_metrics), self.epoch)
         self.tb_writer.add_scalar('MR epoch/validation', np.mean(mr_metrics), self.epoch)
+        self.tb_writer.add_scalar('p_minADE epoch/validation', np.mean(p_minADE_metrics), self.epoch)
+        self.tb_writer.add_scalar('p_minFDE epoch/validation', np.mean(p_minFDE_metrics), self.epoch)
+        self.tb_writer.add_scalar('p_MR epoch/validation', np.mean(p_MR_metrics), self.epoch)
+        self.tb_writer.add_scalar('brier_minADE epoch/validation', np.mean(brier_minADE_metrics), self.epoch)
+        self.tb_writer.add_scalar('brier_minFDE epoch/validation', np.mean(brier_minFDE_metrics), self.epoch)
         
         
     # ===================================================================================== #
