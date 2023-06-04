@@ -20,11 +20,7 @@ class SingleL2Loss (nn.Module):
         # Compute regresion loss
         reg_loss = self.reg_loss_fn (pred_trajs, gt_trajs)
         # Reduce the loss if is neccesary
-        if len(reg_loss.shape) > 2:
-           reg_loss = torch.sum(reg_loss, -1)
-           reg_loss = torch.mean(reg_loss)
-        elif len(reg_loss.shape) > 1:
-            reg_loss = torch.mean(reg_loss)        
+        reduced_reg_loss = reg_loss.sum(-1).mean()
         # ----------------------------------------------------------------------- #
         # Final loss
         loss = reg_loss
