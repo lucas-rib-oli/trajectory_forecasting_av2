@@ -84,7 +84,7 @@ class TransTraj (nn.Module):
         # ----------------------------------------------------------------------- #
         # Repeat BS times
         self.query_batches = self.query_embed.weight.view(1, *self.query_embed.weight.shape).repeat(future_traj.shape[0], 1, 1)
-        # self.query_batches = self.pos_decoder(self.query_batches)
+        self.query_batches = self.pos_decoder(self.query_batches)
         # ----------------------------------------------------------------------- #
         # Transformer step
         output = self.transformer(src, self.query_batches, src_mask=src_mask, tgt_mask=tgt_mask, src_key_padding_mask=src_padding_mask, 

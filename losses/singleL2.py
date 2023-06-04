@@ -21,7 +21,5 @@ class SingleL2Loss (nn.Module):
         reg_loss = self.reg_loss_fn (pred_trajs, gt_trajs)
         # Reduce the loss if is neccesary
         reduced_reg_loss = reg_loss.sum(-1).mean()
-        # ----------------------------------------------------------------------- #
-        # Final loss
-        loss = reg_loss
-        return loss
+        
+        return reduced_reg_loss
