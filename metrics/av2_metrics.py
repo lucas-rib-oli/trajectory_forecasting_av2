@@ -107,8 +107,13 @@ class Av2Metrics ():
         scores_fde = torch.gather(scores, 1, index_fde.unsqueeze(1)).squeeze(-1)
         
         mr = min_fde > miss_threshold
-        p_mr = torch.where(mr, torch.tensor(1.0), 1 - scores_fde)
-        
+        p_mr = mr.to(torch.float32)
+        for i in range(0, mr.shape[0]):
+            if mr[i]:
+                p_mr[i] = 1.0
+            else:
+               p_mr[i] = 1 - scores_fde[i]
+            
         return p_mr
     
     def get_brier_minFDE(self, forecasted_trajectories: torch.Tensor, gt_trajectory: torch.Tensor, scores: torch.Tensor):

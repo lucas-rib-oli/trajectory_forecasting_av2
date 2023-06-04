@@ -3,8 +3,8 @@ train = dict(
     device = "cuda:3",
     num_workers = 32,
     experiment_name = "multimodal_TFM",
-    num_epochs = 600,
-    batch_size = 700,
+    num_epochs = 200,
+    batch_size = 1024,
     resume_train = False,
 )
 
