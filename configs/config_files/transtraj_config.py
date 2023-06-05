@@ -1,10 +1,10 @@
 
 train = dict(
     device = "cuda:2",
-    num_workers = 32,
+    num_workers = 6,
     experiment_name = "trajectory_proposal_tgtUnMasked_NoPosEnc_TFM",
-    num_epochs = 600,
-    batch_size = 800,
+    num_epochs = 200,
+    batch_size = 512,
     resume_train = False,
 )
 
