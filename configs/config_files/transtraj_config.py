@@ -1,9 +1,9 @@
 
 train = dict(
-    device = "cuda:0",
+    device = "cuda:1",
     num_workers = 16,
     experiment_name = "seq2seq_TFM",
-    num_epochs = 600,
+    num_epochs = 200,
     batch_size = 512,
     resume_train = False,
 )
@@ -26,10 +26,10 @@ model = dict(
     future_size = 60, # Output trajectory size || 12 output poses
     num_queries = 6, # Number of trajectories of a target || K = 6
     dec_out_size = 2*60, # 6 * 12
-    d_model = 512,
-    nhead = 8,
-    N = 6, # Numer of decoder/encoder layers
-    dim_feedforward = 2048,
+    d_model = 128,
+    nhead = 4,
+    N = 2, # Numer of decoder/encoder layers
+    dim_feedforward = 256,
     dropout = 0.1,
     # Subgraph
     subgraph_width = 32,

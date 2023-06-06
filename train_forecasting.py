@@ -23,7 +23,7 @@ def str_to_bool(value):
     elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
         return True
 parser = argparse.ArgumentParser()
-parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
+parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 args = parser.parse_args()
 # ===================================================================================== #
@@ -83,11 +83,11 @@ class TransformerTrain ():
         # Datos para entrenamiento
         self.train_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='train', output_traj_size=self.future_size, 
                                                        name_pickle=self.name_pickle)
-        self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, collate_fn=collate_fn)
+        self.train_dataloader = DataLoader (self.train_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
         # Datos para validación 
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
                                                      name_pickle=self.name_pickle)
-        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, collate_fn=collate_fn)
+        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
         print (Fore.CYAN + 'Number of training sequences: ' + Fore.WHITE + str(len(self.train_data)) + Fore.RESET)
         print (Fore.CYAN + 'Number of validation sequences: ' + Fore.WHITE + str(len(self.val_data)) + Fore.RESET)
@@ -154,8 +154,8 @@ class TransformerTrain ():
             epoch_losses = []
             for idx, data in enumerate (self.train_dataloader):
                 # Get the data from the dataloader
-                historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
-                future_traj: torch.Tensor = data['future']
+                historic_traj: torch.Tensor = data['historic'].squeeze() # (bs, sequence length, feature number)
+                future_traj: torch.Tensor = data['future'].squeeze()
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
@@ -216,8 +216,8 @@ class TransformerTrain ():
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
-                historic_traj: torch.Tensor = data['historic']
-                future_traj: torch.Tensor = data['future']
+                historic_traj: torch.Tensor = data['historic'].squeeze()
+                future_traj: torch.Tensor = data['future'].squeeze()
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
