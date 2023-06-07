@@ -1,10 +1,10 @@
 
 train = dict(
-    device = "cuda:0",
-    num_workers = 8,
-    experiment_name = "AxialAttention", # closestLoss
-    num_epochs = 600,
-    batch_size = 128,
+    device = "cuda:1",
+    num_workers = 4,
+    experiment_name = "AxialAttention_TFM", # closestLoss
+    num_epochs = 200,
+    batch_size = 256,
     resume_train = False,
 )
 
@@ -34,5 +34,5 @@ model = dict(
     # Subgraph
     subgraph_width = 32,
     num_subgraph_layers = 2,
-    lane_channels = 6
+    lane_channels = 5
 )
