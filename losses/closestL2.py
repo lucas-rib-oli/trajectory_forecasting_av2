@@ -38,8 +38,10 @@ class ClosestL2Loss (nn.Module):
         # Compute loss
         reg_loss = self.reg_loss_fn(pred, gt_overdim)
         # Get the clostest distance
-        min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1)        
-        return min_reg_loss
+        min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1)
+        # Sum agent loss
+        reg_loss = torch.sum(min_reg_loss, dim=-1)    
+        return reg_loss.mean()
     # ===================================================================================== #
     def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, offset_gt_trajs: torch.Tensor) -> torch.Tensor:
         """Forward function
@@ -65,17 +67,6 @@ class ClosestL2Loss (nn.Module):
         # Compute regresion loss
         # Get the loss with respect the best prediction
         reg_loss = self.closest_trajectory_loss(pred_trajs, gt_overdim)
-        
-        # reg_loss = self.reg_loss_fn (pred_trajs, gt_overdim[:,:,:,:2])
-        # reduce the loss if is neccesary
-        if len(reg_loss.shape) > 2:
-           reg_loss = torch.sum(reg_loss, -1)
-           # Sum agents loss
-           reg_loss = torch.sum(reg_loss, -1)
-           # Compute the mean with the batch size
-           reg_loss = torch.mean(reg_loss)
-        elif len(reg_loss.shape) > 1:
-            reg_loss = torch.mean(reg_loss)        
         # ----------------------------------------------------------------------- #
         # Final loss
         loss = reg_loss + cls_los
