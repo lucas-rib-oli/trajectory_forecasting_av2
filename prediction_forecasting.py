@@ -101,7 +101,7 @@ class TransformerPrediction ():
         # Validation data
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
                                                      name_pickle=self.name_pickle)
-        self.val_dataloader = DataLoader (self.val_data, batch_size=1, num_workers=self.num_workers, shuffle=True, collate_fn=collate_fn)
+        self.val_dataloader = DataLoader (self.val_data, batch_size=1, num_workers=self.num_workers, collate_fn=collate_fn)
         # ---------------------------------------------------------------------------------------------------- #
         self.loss_fn = nn.HuberLoss(reduction='mean')
         # ---------------------------------------------------------------------------------------------------- #
@@ -154,23 +154,8 @@ class TransformerPrediction ():
                 src_seq_len = historic_traj.size()[1]
                 src_mask = torch.zeros((src_seq_len, src_seq_len),device=self.device).type(torch.bool)
                 # ----------------------------------------------------------------------- #
-                # Encode step
-                memory = self.model.encode(historic_traj, src_mask).to(self.device)
-                # ----------------------------------------------------------------------- #
-                dec_inp = future_traj[:, 0, :]
-                # Implement one dimension for the tranformer to be able to deal with the input decoder
-                dec_inp = dec_inp.unsqueeze(1).to(self.device)
-                # ----------------------------------------------------------------------- #
-                # Apply Greedy Code
-                for _ in range (0, self.future_size - 1):
-                    # Get target mask
-                    tgt_mask = (self.generate_square_subsequent_mask(dec_inp.size()[1]))
-                    # Get tokens
-                    out = self.model.decode(dec_inp, memory, tgt_mask).to(self.device)
-                    # Generate the prediction
-                    prediction = self.model.generate ( out ).to(self.device)
-                    # Concatenate
-                    dec_inp = torch.cat([dec_inp, prediction[:, -1:, :]], dim=1).to(self.device)
+                # Output model
+                pred = self.model (historic_traj, future_traj, src_mask=src_mask, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None)
                 
                 if args.save_figs:
                     plt.figure(figsize=(20,11))
@@ -179,7 +164,7 @@ class TransformerPrediction ():
                 # Plot best prediction
                 color = (1,1,0)
                 label = 'best prediction'
-                plt.plot (dec_inp[0,:,0].cpu().numpy(), dec_inp[0,:,1].cpu().numpy(), '--o', color=color, label=label)
+                plt.plot (pred[0,:,0].cpu().numpy(), pred[0,:,1].cpu().numpy(), '--o', color=color, label=label)
                 # Plot GT
                 plt.plot (future_traj[0,:,0].cpu().numpy(), future_traj[0,:,1].cpu().numpy(), '--o', color=(0,1,0, 0.6), label='Future GT')
                 
