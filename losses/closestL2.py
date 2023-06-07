@@ -29,8 +29,8 @@ class ClosestL2Loss (nn.Module):
         # Compute loss
         reg_loss = self.reg_loss_fn(pred, gt_overdim)
         # Get the clostest distance
-        min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1)        
-        return min_reg_loss
+        min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1)    
+        return torch.mean(min_reg_loss, dim=-1) # Mean -> BS
     # ===================================================================================== #
     def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, offset_gt_trajs: torch.Tensor) -> torch.Tensor:
         """Forward function
