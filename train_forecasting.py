@@ -23,8 +23,9 @@ def str_to_bool(value):
     elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
         return True
 parser = argparse.ArgumentParser()
-parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
+parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
+parser.add_argument('--experiment_name', type=str, default='none', help='Experiment name')
 args = parser.parse_args()
 # ===================================================================================== #
 def get_lr(optimizer):
@@ -71,8 +72,11 @@ class TransformerTrain ():
         self.save_path = config_data['path_2_save_weights']
         self.name_pickle = config_data['name_pickle']
         self.tensorboard_path = config_data['tensorboard_path']
-        
-        self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
+        if args.experiment_name == 'none':
+            main_exp_name = train_config['experiment_name']
+        else:
+            main_exp_name = args.experiment_name
+        self.experiment_name = main_exp_name + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ----------------------------------------------------------------------- #
         print (Fore.CYAN + 'Device: ' + Fore.WHITE + self.device + Fore.RESET)
         print (Fore.CYAN + 'Number of epochs: ' + Fore.WHITE + str(self.num_epochs) + Fore.RESET)
@@ -160,14 +164,14 @@ class TransformerTrain ():
                 historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
                 future_traj: torch.Tensor = data['future']
                 offset_future_traj: torch.Tensor = data['offset_future']
-                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1) # Delete Z-coordinate and ID
-                
+                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1) # Delete Z-coordinate
+                lanes_mask: torch.Tensor = data['lanes_mask']
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj[:,:,:2].to(self.device)
+                future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
-                
+                lanes_mask = lanes_mask.to(self.device)
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
                 # dec_input = torch.cat((start_tensor, tgt), 1).to(self.device)
@@ -178,7 +182,7 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, lanes_padding_mask=lanes_mask) # return -> x1 ... x7
                 loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
@@ -231,27 +235,29 @@ class TransformerTrain ():
                 historic_traj: torch.Tensor = data['historic']
                 future_traj: torch.Tensor = data['future']
                 offset_future_traj: torch.Tensor = data['offset_future']
-                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1) # Delete Z-coordinate and ID
+                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1) # Delete Z-coordinate
+                lanes_mask: torch.Tensor = data['lanes_mask']
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
-                future_traj = future_traj[:,:,:2].to(self.device)
+                future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
+                lanes_mask = lanes_mask.to(self.device)
                 # ----------------------------------------------------------------------- #
                 # Generate a square mask for the sequence
                 src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, lanes_padding_mask=lanes_mask) # return -> x1 ... x7
                 loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 validation_losses.append(loss.detach().cpu().numpy())
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                min_ade = self.minADE.compute(pred, future_traj[:,:,:2])
-                min_fde = self.minFDE.compute(pred, future_traj[:,:,:2])
-                mr_loss = self.MR.compute(pred, future_traj[:,:,:2])
+                min_ade = self.minADE.compute(pred[:,:,:,:2], future_traj[:,:,:2])
+                min_fde = self.minFDE.compute(pred[:,:,:,:2], future_traj[:,:,:2])
+                mr_loss = self.MR.compute(pred[:,:,:,:2], future_traj[:,:,:2])
                 minADE_metrics.append (min_ade.detach().cpu().numpy())
                 minFDE_metrics.append (min_fde.detach().cpu().numpy())
                 mr_metrics.append (mr_loss.detach().cpu().numpy())
