@@ -89,7 +89,7 @@ class TransformerEvaluation ():
         self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ---------------------------------------------------------------------------------------------------- #
         # Get the model
-        self.model = TransTraj (pose_dim=self.pose_dim, n_future=self.future_size, d_model=self.d_model, nhead=self.nhead, 
+        self.model = TransTraj (pose_dim=self.pose_dim, d_model=self.d_model, nhead=self.nhead, 
                                 N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
         # ---------------------------------------------------------------------------------------------------- #
         # Validation data
