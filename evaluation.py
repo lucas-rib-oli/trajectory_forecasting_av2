@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 from av2.datasets.motion_forecasting import scenario_serialization, data_schema
 from av2.datasets.motion_forecasting.data_schema import ArgoverseScenario, ObjectType
-from datasets import Av2MotionForecastingDataset
+from datasets import Av2MotionForecastingDataset, collate_fn
 from model.transtraj import TransTraj
 from typing import Final
 from collections import defaultdict
@@ -52,6 +52,7 @@ def str_to_bool(value):
 parser = argparse.ArgumentParser()
 parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
+parser.add_argument('--experiment_name', type=str, default='none', help='Experiment name')
 args = parser.parse_args()
 # ===================================================================================== #
 def normalice_heading (angle):
@@ -92,7 +93,11 @@ class TransformerEvaluation ():
         config_data = cfg.get('data')
         self.save_path = config_data['path_2_save_weights']
         self.name_pickle = config_data['name_pickle']
-        self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
+        if args.experiment_name == 'none':
+            main_exp_name = train_config['experiment_name']
+        else:
+            main_exp_name = args.experiment_name
+        self.experiment_name = main_exp_name + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ---------------------------------------------------------------------------------------------------- #
         # Get the model
         self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
@@ -103,7 +108,7 @@ class TransformerEvaluation ():
         # Validation data
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
                                                      name_pickle=self.name_pickle)
-        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
+        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False, collate_fn=collate_fn)
         # ---------------------------------------------------------------------------------------------------- #
         self.loss_fn = ClosestL2Loss()
         # ---------------------------------------------------------------------------------------------------- #
@@ -154,17 +159,21 @@ class TransformerEvaluation ():
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
-                historic_traj: torch.Tensor = data['historic'].squeeze()
-                future_traj: torch.Tensor = data['future'].squeeze()
-                offset_future_traj: torch.Tensor = data['offset_future'].squeeze()
+                historic_traj: torch.Tensor = data['historic']
+                future_traj: torch.Tensor = data['future']
+                offset_future_traj: torch.Tensor = data['offset_future']
+                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1)
+                lanes_mask: torch.Tensor = data['lanes_mask']
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
+                lanes = lanes.to(self.device)
+                lanes_mask = lanes_mask.to(self.device)
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None, lanes_padding_mask=None) # return -> x1 ... x7
                 loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 validation_losses.append(loss.detach().cpu().numpy())
                 # ----------------------------------------------------------------------- #
