@@ -25,8 +25,9 @@ def str_to_bool(value):
     elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
         return True
 parser = argparse.ArgumentParser()
-parser.add_argument('--path_2_dataset', type=str, default='/datasets/', help='Path to the dataset')
+parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
+parser.add_argument('--experiment_name', type=str, default='none', help='Experiment name')
 args = parser.parse_args()
 # ===================================================================================== #
 def get_lr(optimizer):
@@ -79,8 +80,11 @@ class TransformerTrain ():
         self.save_path = config_data['path_2_save_weights']
         self.name_pickle = config_data['name_pickle']
         self.tensorboard_path = config_data['tensorboard_path']
-        
-        self.experiment_name = train_config['experiment_name'] + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
+        if args.experiment_name == 'none':
+            main_exp_name = train_config['experiment_name']
+        else:
+            main_exp_name = args.experiment_name
+        self.experiment_name = main_exp_name + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ----------------------------------------------------------------------- #
         print (Fore.CYAN + 'Device: ' + Fore.WHITE + self.device + Fore.RESET)
         print (Fore.CYAN + 'Number of epochs: ' + Fore.WHITE + str(self.num_epochs) + Fore.RESET)
