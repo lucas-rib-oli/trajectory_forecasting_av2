@@ -43,7 +43,7 @@ class TransTraj (nn.Module):
         self.pos_decoder = PositionalEncoding(d_model, dropout)
         # ----------------------------------------------------------------------- #
         # VectorNet Subgraph
-        self.subgraph = LaneNet(lane_channels, subgraph_width, num_subgraph_layers)
+        self.subgraph = LaneNet(lane_channels + 2, subgraph_width, num_subgraph_layers) # +2 because it is vectorised then two more feats are added (process_lanes)
         self.lanes_emb = LinearEmbedding(subgraph_width*2, d_model)
         lane_enc_layer = TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, dropout=dropout,
                                                  batch_first=True)
@@ -182,7 +182,7 @@ class PositionalEncoding(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: Tensor, shape [batch_size, seq_len, embedding_dim]
+            x: Tensor, shape [batch_size, A, seq_len, embedding_dim]
         """
         x = x + Variable(self.pe[:x.shape[-2]], requires_grad=False)
         return self.dropout(x)
