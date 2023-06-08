@@ -85,7 +85,7 @@ class TransTraj (nn.Module):
         self.classification_layer = nn.Sequential(
                                     nn.Linear(d_model, d_model),
                                     nn.Linear(d_model, 1, bias=True))
-        self.cls_opt = nn.Softmax(dim=-1)
+        # self.cls_opt = nn.Softmax(dim=-1)
         
         # This was important from their code.
         # Initialize parameters with Glorot / fan_avg.
@@ -154,9 +154,9 @@ class TransTraj (nn.Module):
         
         cls_h = self.cls_FFN(out)
         cls_h = self.classification_layer(cls_h).squeeze(dim=-1)
-        conf: torch.Tensor = self.cls_opt(cls_h)
+        # conf: torch.Tensor = self.cls_opt(cls_h)
         
-        return pred, conf
+        return pred, cls_h
 
 
 class PositionalEncoding(nn.Module):

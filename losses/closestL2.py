@@ -7,48 +7,40 @@ class ClosestL2Loss (nn.Module):
         super().__init__()
         
         self.reg_loss_fn = nn.PairwiseDistance(p=2)
-        self.class_loss_fn = nn.BCELoss()
+        self.class_loss_fn = nn.CrossEntropyLoss(reduction='none')
     # ===================================================================================== #   
     def get_one_hot_vector_by_distance (self, pred_trajs: torch.Tensor, gt_trajs: torch.Tensor) -> torch.Tensor:
         # Get the distance between the prediction and the gt trajectories
-        dist = torch.norm(gt_trajs[:,:,:,:2] - pred_trajs[:,:,:,:2], p=2, dim=-1)
-        distance_sum = torch.sum(dist, dim=-1)
+        dist = torch.norm(gt_trajs[:,:,:,:2] - pred_trajs[:,:,:,:2], p=2, dim=-1) 
+        distance_sum = torch.sum(dist, dim=-1) # BS, A
         indexes = torch.argmin(distance_sum,dim=-1)
         one_hot_vector = torch.zeros_like (distance_sum).to(pred_trajs.device)
         one_hot_vector = one_hot_vector.scatter(2, indexes.unsqueeze(-1), 1)
         return one_hot_vector, indexes    
     # ===================================================================================== #
-    def closest_trajectory_loss (self, pred: torch.Tensor, gt_overdim: torch.Tensor):
+    def closest_trajectory_loss (self, pred: torch.Tensor, gt_overdim: torch.Tensor, valid_agents_mask: torch.Tensor):
         """Compute the regresion loss with respect to the closest predicted trajectory
 
         Args:
             pred (torch.Tensor): _description_
             gt (torch.Tensor): _description_
+            valid_agents_mask: valid agents (avoid padding) [BS, A]
         """
-        # import matplotlib.pyplot as plt
-        # trajs_pred_0 = pred[0]
-        # gt_0 = gt[0]
-        # print ('closest_traj size: ', closest_traj.size())
-        # for k in range(0,6):
-        #     plt.plot (trajs_pred_0[k,:,0].detach().cpu().numpy(), trajs_pred_0[k,:,1].detach().cpu().numpy(), '--o', color='r', label='prediction')
-        # plt.plot (gt_0[0,:,0].detach().cpu().numpy(), gt_0[0,:,1].detach().cpu().numpy(), '--o', color=(0,1,0), label='GT')
-        # plt.plot (closest_traj[0,0,:,0].detach().cpu().numpy(), closest_traj[0,0,:,1].detach().cpu().numpy(), '--o', color=(1,1,0), label='best')
-        # plt.show()
-        
         # Compute loss
-        reg_loss = self.reg_loss_fn(pred, gt_overdim)
+        reg_loss = self.reg_loss_fn(pred, gt_overdim) # [BS, A, K, F]
         # Get the clostest distance
-        min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1)
+        min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1) # [BS, A]
+        
         # Sum agent loss
-        reg_loss = torch.sum(min_reg_loss, dim=-1)    
-        return reg_loss.mean()
+        masked_reg_loss = (min_reg_loss * valid_agents_mask).sum(-1) # [BS]
+        return masked_reg_loss.mean()
     # ===================================================================================== #
     def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, offset_gt_trajs: torch.Tensor) -> torch.Tensor:
         """Forward function
 
         Args:
-            pred_trajs (torch.Tensor): _description_
-            gt_trajs (torch.Tensor): _description_
+            pred_trajs (torch.Tensor): [BS, A, K, F, D]
+            gt_trajs (torch.Tensor): [BS, A, F, D]
             offset_gt_trajs (torch.Tensor): _description_
         """
         bs = pred_trajs.shape[0]
@@ -60,16 +52,23 @@ class ClosestL2Loss (nn.Module):
         gt_overdim: torch.Tensor = gt_trajs.unsqueeze(2).repeat(1, 1, K, 1, 1)
         # offset_gt_trajs_overdim: torch.Tensor = offset_gt_trajs.unsqueeze(1).repeat(1, K, 1, 1)
         # ----------------------------------------------------------------------- #
+        # Get valid agents
+        valid_agents_mask = torch.abs(gt_trajs).sum(dim=-1).sum(dim=-1) > 0 # [BS, A]
+        # ----------------------------------------------------------------------- #
         # Compute classification loss
         one_hot_vector, _ = self.get_one_hot_vector_by_distance (pred_trajs, gt_overdim)
-        cls_los = self.class_loss_fn(pred_scores, one_hot_vector)
+        pred_scores = pred_scores.permute(0, 2, 1)
+        one_hot_vector = one_hot_vector.permute(0, 2, 1)
+        cls_loss = self.class_loss_fn(pred_scores, one_hot_vector) # [BS, A, K]
+        valid_agents_mask = valid_agents_mask.float()
+        mean_cls_loss_masked = (cls_loss * valid_agents_mask).sum(-1) / valid_agents_mask.sum(-1) # [BS]
         # ----------------------------------------------------------------------- #        
         # Compute regresion loss
         # Get the loss with respect the best prediction
-        reg_loss = self.closest_trajectory_loss(pred_trajs, gt_overdim)
+        reg_loss = self.closest_trajectory_loss(pred_trajs, gt_overdim, valid_agents_mask)
         # ----------------------------------------------------------------------- #
         # Final loss
-        loss = reg_loss + cls_los
+        loss = reg_loss + mean_cls_loss_masked.mean()
         
         return loss
 
