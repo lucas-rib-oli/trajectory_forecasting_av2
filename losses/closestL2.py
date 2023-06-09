@@ -6,7 +6,7 @@ class ClosestL2Loss (nn.Module):
     def __init__(self, reduction: str = 'sum') -> None:
         super().__init__()
         
-        self.reg_loss_fn = nn.PairwiseDistance(p=2)
+        self.reg_loss_fn = nn.HuberLoss(reduction='none')
         self.class_loss_fn = nn.CrossEntropyLoss(reduction='none')
     # ===================================================================================== #   
     def get_one_hot_vector_by_distance (self, pred_trajs: torch.Tensor, gt_trajs: torch.Tensor) -> torch.Tensor:
@@ -27,7 +27,7 @@ class ClosestL2Loss (nn.Module):
             valid_agents_mask: valid agents (avoid padding) [BS, A]
         """
         # Compute loss
-        reg_loss = self.reg_loss_fn(pred, gt_overdim) # [BS, A, K, F]
+        reg_loss = self.reg_loss_fn(pred, gt_overdim).sum(-1) # [BS, A, K, F]
         # Get the clostest distance
         min_reg_loss, _ = torch.min(torch.sum(reg_loss, dim=-1), dim=-1) # [BS, A]
         

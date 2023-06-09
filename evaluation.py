@@ -18,6 +18,7 @@ from rich.progress import track
 from metrics import Av2Metrics
 from configs import Config
 from losses import ClosestL2Loss
+from av_eval_forecasting import compute_forecasting_metrics
 # ===================================================================================== #
 # Configure constants
 _OBS_DURATION_TIMESTEPS: Final[int] = 50 # The first 5 s of each scenario is denoted as the observed window
@@ -50,7 +51,7 @@ def str_to_bool(value):
     elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
         return True
 parser = argparse.ArgumentParser()
-parser.add_argument('--path_2_dataset', type=str, default='/raid/datasets/argoverse2/pickle_data', help='Path to the dataset')
+parser.add_argument('--path_2_dataset', type=str, default='pickle_data', help='Path to the dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 parser.add_argument('--experiment_name', type=str, default='none', help='Experiment name')
 args = parser.parse_args()
@@ -156,6 +157,11 @@ class TransformerEvaluation ():
         p_MR_metrics = []
         brier_minADE_metrics = []
         brier_minFDE_metrics = []
+        
+        forecasted_trajectories = {}
+        gt_trajectories = {}
+        forecasted_probabilities = {}
+        id_obs = 0
         for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
@@ -171,6 +177,9 @@ class TransformerEvaluation ():
                 lanes = lanes.to(self.device)
                 lanes_mask = lanes_mask.to(self.device)
                 # ----------------------------------------------------------------------- #
+                # Get valid agents
+                valid_agents_mask = torch.abs(future_traj).sum(dim=-1).sum(-1) > 0
+                # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
@@ -179,39 +188,25 @@ class TransformerEvaluation ():
                 softmax = nn.Softmax(dim=-1)
                 scores = softmax(conf)
                 # ----------------------------------------------------------------------- #
-                # Compute metrics
-                # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
-                
-                av2_metrics_dict = self.av2Metrics.get_metrics(pred[:,:,:,:,:2],  future_traj[:,:,:,:2], scores)
-                
-                minADE = av2_metrics_dict["minADE"]
-                minFDE = av2_metrics_dict["minFDE"]
-                MR = av2_metrics_dict["MR"]
-                p_minADE = av2_metrics_dict["p-minADE"]
-                p_minFDE = av2_metrics_dict["p-minFDE"]
-                p_MR = av2_metrics_dict["p-MR"]
-                brier_minADE = av2_metrics_dict["brier-minADE"]
-                brier_minFDE = av2_metrics_dict["brier-minFDE"]
-                
-                minADE_metrics.append (minADE.detach().cpu().numpy())
-                minFDE_metrics.append (minFDE.detach().cpu().numpy())
-                mr_metrics.append (MR.detach().cpu().numpy())
-                p_minADE_metrics.append (p_minADE.detach().cpu().numpy())
-                p_minFDE_metrics.append (p_minFDE.detach().cpu().numpy())
-                p_MR_metrics.append (p_MR.detach().cpu().numpy())
-                brier_minADE_metrics.append (brier_minADE.detach().cpu().numpy())
-                brier_minFDE_metrics.append (brier_minFDE.detach().cpu().numpy())
+                # Get trajectories
+                for i, predicted_batch in enumerate(pred): # bs, a, k, f, d
+                    for idx_agent, agent_predicted in enumerate(predicted_batch):# a, k, f, d
+                        if valid_agents_mask[i,idx_agent]: 
+                            forecasted_trajectories[id_obs] = []
+                            gt_trajectories[id_obs] = future_traj[i][idx_agent][:,0:2].cpu().numpy()
+                            forecasted_probabilities[id_obs] = scores[i][idx_agent].cpu().numpy()
+                            for forescasted_traj in agent_predicted:
+                                forecasted_trajectories[id_obs].append(forescasted_traj.cpu().numpy()[:,0:2])
+                            id_obs += 1
+        # ----------------------------------------------------------------------- #
         validation_loss = np.mean(validation_losses)
-        
+        # ----------------------------------------------------------------------- #
+        metric_results = compute_forecasting_metrics(forecasted_trajectories, gt_trajectories, 6, 60, 2.0, forecasted_probabilities)
+        for key, value in metric_results.items():
+            print(Fore.GREEN + key + ': ' + Fore.WHITE, "{:.4f}".format(value))
         print (Fore.GREEN + 'Validation loss:' + Fore.WHITE, validation_loss)
-        print(Fore.GREEN + 'minFDE:' + Fore.WHITE, "{:.4f}".format(np.mean(minFDE_metrics)))
-        print(Fore.GREEN + 'minADE:' + Fore.WHITE, "{:.4f}".format(np.mean(minADE_metrics)))
-        print(Fore.GREEN + 'MR:' + Fore.WHITE, "{:.4f}".format(np.mean(mr_metrics)))
-        print(Fore.GREEN + 'p_minFDE:' + Fore.WHITE, "{:.4f}".format(np.mean(p_minFDE_metrics)))
-        print(Fore.GREEN + 'p_minADE:' + Fore.WHITE, "{:.4f}".format(np.mean(p_minADE_metrics)))
-        print(Fore.GREEN + 'p_MR:' + Fore.WHITE, "{:.4f}".format(np.mean(p_MR_metrics)))
-        print(Fore.GREEN + 'brier_minFDE:' + Fore.WHITE, "{:.4f}".format(np.mean(brier_minFDE_metrics)))
-        print(Fore.GREEN + 'brier_minADE:' + Fore.WHITE, "{:.4f}".format(np.mean(brier_minADE_metrics)))
+        print (Fore.GREEN + 'Forecasted trajectories: ' + Fore.WHITE, len(forecasted_trajectories))
+        # Compute metrics argoverse
         
     # ---------------------------------------------------------------------------------------------------- #
         
