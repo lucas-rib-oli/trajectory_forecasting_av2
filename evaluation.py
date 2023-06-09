@@ -108,7 +108,7 @@ class TransformerEvaluation ():
         # Validation data
         self.val_data = Av2MotionForecastingDataset (dataset_dir=args.path_2_dataset, split='val', output_traj_size=self.future_size,
                                                      name_pickle=self.name_pickle)
-        self.val_dataloader = DataLoader (self.val_data, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False, collate_fn=collate_fn)
+        self.val_dataloader = DataLoader (self.val_data, batch_size=1, num_workers=self.num_workers, shuffle=False, collate_fn=collate_fn)
         # ---------------------------------------------------------------------------------------------------- #
         self.loss_fn = ClosestL2Loss()
         # ---------------------------------------------------------------------------------------------------- #
@@ -156,7 +156,7 @@ class TransformerEvaluation ():
         p_MR_metrics = []
         brier_minADE_metrics = []
         brier_minFDE_metrics = []
-        for idx, data in track(enumerate(self.val_dataloader), 'Evaluating the model ...'):
+        for idx, data in enumerate(self.val_dataloader):
             # Set no requires grad
             with torch.no_grad():                
                 historic_traj: torch.Tensor = data['historic']
@@ -176,11 +176,13 @@ class TransformerEvaluation ():
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
                 loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 validation_losses.append(loss.detach().cpu().numpy())
+                softmax = nn.Softmax(dim=-1)
+                scores = softmax(conf)
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
                 
-                av2_metrics_dict = self.av2Metrics.get_metrics(pred[:,:,:,:,:2],  future_traj[:,:,:,:2], conf)
+                av2_metrics_dict = self.av2Metrics.get_metrics(pred[:,:,:,:,:2],  future_traj[:,:,:,:2], scores)
                 
                 minADE = av2_metrics_dict["minADE"]
                 minFDE = av2_metrics_dict["minFDE"]

@@ -59,7 +59,7 @@ class ClosestL2Loss (nn.Module):
         one_hot_vector, _ = self.get_one_hot_vector_by_distance (pred_trajs, gt_overdim)
         pred_scores = pred_scores.permute(0, 2, 1)
         one_hot_vector = one_hot_vector.permute(0, 2, 1)
-        cls_loss = self.class_loss_fn(pred_scores, one_hot_vector) # [BS, A, K]
+        cls_loss = self.class_loss_fn(pred_scores, one_hot_vector) # [BS, A]
         valid_agents_mask = valid_agents_mask.float()
         mean_cls_loss_masked = (cls_loss * valid_agents_mask).sum(-1) / valid_agents_mask.sum(-1) # [BS]
         # ----------------------------------------------------------------------- #        
