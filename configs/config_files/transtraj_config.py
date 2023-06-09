@@ -1,8 +1,8 @@
 
 train = dict(
-    device = "cuda:1",
+    device = "cuda:0",
     num_workers = 4,
-    experiment_name = "AxialAttention_TFM", # closestLoss
+    experiment_name = "AxialAttention_HubberLoss_CrossEntropy_TFM", # closestLoss
     num_epochs = 200,
     batch_size = 256,
     resume_train = False,
