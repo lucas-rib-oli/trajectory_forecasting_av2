@@ -147,7 +147,7 @@ class TransformerPrediction ():
             with torch.no_grad():                
                 historic_traj: torch.Tensor = data['historic']
                 future_traj: torch.Tensor = data['future']
-                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1)
+                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1)
                 
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
