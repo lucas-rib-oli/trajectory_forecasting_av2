@@ -11,12 +11,12 @@ class ClosestL2Loss (nn.Module):
     # ===================================================================================== #   
     def get_one_hot_vector_by_distance (self, pred_trajs: torch.Tensor, gt_trajs: torch.Tensor) -> torch.Tensor:
         # Get the distance between the prediction and the gt trajectories
-        dist = torch.norm(gt_trajs[:,:,:,:2] - pred_trajs[:,:,:,:2], p=2, dim=-1) 
+        dist = torch.norm(gt_trajs[:,:,:,:,:2] - pred_trajs[:,:,:,:,:2], p=2, dim=-1)
         distance_sum = torch.sum(dist, dim=-1) # BS, A
         indexes = torch.argmin(distance_sum,dim=-1)
         one_hot_vector = torch.zeros_like (distance_sum).to(pred_trajs.device)
         one_hot_vector = one_hot_vector.scatter(2, indexes.unsqueeze(-1), 1)
-        return one_hot_vector, indexes    
+        return one_hot_vector, indexes
     # ===================================================================================== #
     def closest_trajectory_loss (self, pred: torch.Tensor, gt_overdim: torch.Tensor, valid_agents_mask: torch.Tensor):
         """Compute the regresion loss with respect to the closest predicted trajectory
