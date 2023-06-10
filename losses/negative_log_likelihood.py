@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-class GMMLoss (nn.Module):
+class NLLLoss (nn.Module):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         
@@ -9,7 +9,7 @@ class GMMLoss (nn.Module):
         self.rho_limit = 0.5
         self.use_square_gmm = False
         
-    def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor) -> torch.Tensor:
+    def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, timestamp_loss_weight: torch.Tensor = None) -> torch.Tensor:
         """_summary_
 
         Args:
@@ -47,7 +47,7 @@ class GMMLoss (nn.Module):
             log_std2 = torch.clip(nearest_trajs[:, :, 3], min=self.log_std_range[0], max=self.log_std_range[1])
             std1 = torch.exp(log_std1)  # (0.2m to 150m)
             std2 = torch.exp(log_std2)  # (0.2m to 150m)
-            rho = torch.clip(nearest_trajs[:, :, 4], min=-rho_limit, max=rho_limit)
+            rho = torch.clip(nearest_trajs[:, :, 4], min=-self.rho_limit, max=self.rho_limit)
 
         gt_valid_mask = gt_valid_mask.type_as(pred_scores)
         if timestamp_loss_weight is not None:
