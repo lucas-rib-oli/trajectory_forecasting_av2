@@ -1,8 +1,8 @@
 
 train = dict(
-    device = "cuda:2",
+    device = "cuda:0",
     num_workers = 4,
-    experiment_name = "AxialAttention_CrossEntrpyMASKED_TFM", # closestLoss
+    experiment_name = "AxialAttention_NLL_TFM", # closestLoss
     num_epochs = 200,
     batch_size = 256,
     resume_train = False,
@@ -25,7 +25,7 @@ model = dict(
     pose_dim = 6, # features dim [x, y, ...]
     future_size = 60, # Output trajectory size || 12 output poses
     num_queries = 6, # Number of trajectories of a target || K = 6
-    dec_out_size = 6*60, # 6 * 12
+    out_feats_size = 5, # D_out (µ_x , µ_y , sigma_x , sigma_y , p)
     d_model = 128,
     nhead = 2,
     N = 2, # Numer of decoder/encoder layers
