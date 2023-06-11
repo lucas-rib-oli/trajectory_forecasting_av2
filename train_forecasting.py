@@ -16,7 +16,7 @@ from model.NoamOpt import NoamOpt
 from model.basic_functions import generate_square_subsequent_mask
 from pathlib import Path
 from configs import Config
-from losses import ClosestL2Loss
+from losses import ClosestL2Loss, NLLLoss
 from metrics import minADE, minFDE, MR
 # ===================================================================================== #
 def str_to_bool(value):
@@ -57,7 +57,7 @@ class TransformerTrain ():
         self.dim_feedforward = model_config['dim_feedforward']
         self.num_queries = model_config['num_queries']
         self.pose_dim = model_config['pose_dim']
-        self.dec_out_size = model_config['dec_out_size']
+        self.out_feats_size = model_config['out_feats_size']
         self.future_size = model_config['future_size']
         self.subgraph_width = model_config['subgraph_width']
         self.num_subgraph_layers = model_config['num_subgraph_layers']
@@ -105,7 +105,7 @@ class TransformerTrain ():
         print (Fore.CYAN + 'Number of validation sequences: ' + Fore.WHITE + str(len(self.val_data)) + Fore.RESET)
         # ----------------------------------------------------------------------- #
         # Get the model
-        self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+        self.model = TransTraj (pose_dim=self.pose_dim, out_feats_size=self.out_feats_size, num_queries=self.num_queries,
                                 subgraph_width=self.subgraph_width, num_subgraph_layers=self.num_subgraph_layers, lane_channels=self.lane_channels,
                                 future_size=self.future_size,
                                 d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
@@ -119,7 +119,7 @@ class TransformerTrain ():
         
         # Initialize the loss function
         # self.loss_fn = nn.HuberLoss(reduction='mean')
-        self.loss_fn = ClosestL2Loss()
+        self.loss_fn = NLLLoss()
         # ----------------------------------------------------------------------- #
         self.last_train_loss = np.Inf
         self.last_validation_loss = np.Inf
@@ -163,7 +163,9 @@ class TransformerTrain ():
         self.model.train()
         # Epochs
         for self.epoch in range(self.start_epoch, self.num_epochs):
-            epoch_losses = []
+            epoch_total_losses = []
+            epoch_reg_losses = []
+            epoch_cls_losses = []
             for idx, data in enumerate (self.train_dataloader):
                 # Check RAM memory
                 check_ram_memory ()
@@ -171,13 +173,13 @@ class TransformerTrain ():
                 # Get the data from the dataloader
                 historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
                 future_traj: torch.Tensor = data['future']
-                offset_future_traj: torch.Tensor = data['offset_future']
+                # offset_future_traj: torch.Tensor = data['offset_future']
                 lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1) # Delete Z-coordinate
                 
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
-                offset_future_traj = offset_future_traj.to(self.device)
+                # offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
                 # 0, 0, 0 indicate the start of the sequence
                 # start_tensor = torch.zeros(tgt.shape[0], 1, tgt.shape[2]).to(self.device)
@@ -190,30 +192,36 @@ class TransformerTrain ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
+                total_loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
                 self.optimizer.zero_grad()
-                loss.backward()
+                total_loss.backward()
                 self.optimizer.step()
                 # ----------------------------------------------------------------------- #
                 # Add one iteration
                 self.iteration += 1
-                self.last_train_loss = loss
+                self.last_train_loss = total_loss
                 
-                np_loss = loss.detach().cpu().numpy()
-                self.last_train_loss = np.mean(np_loss)
-                epoch_losses.append(self.last_train_loss)
+                np_total_loss = total_loss.detach().cpu().numpy()
+                self.last_train_loss = np.mean(np_total_loss)
+                epoch_total_losses.append(self.last_train_loss)
+                epoch_reg_losses.append(reg_loss.detach().cpu().numpy())
+                epoch_cls_losses.append(cls_loss.detach().cpu().numpy())
                 if (self.iteration % 10 == 0):
                     print('-' * 89)
-                    print (f'| epoch {self.epoch} | iteration {self.iteration} | [train] loss {np_loss} |')
+                    print (f'| epoch {self.epoch} | iteration {self.iteration} | [train] loss {np_total_loss} |')
                     self.tb_writer.add_scalar('Loss/train', self.last_train_loss, self.iteration)
             # Calculate and print training statistics
-            loss_epoch = np.mean(epoch_losses)
+            total_loss_epoch = np.mean(epoch_total_losses)
+            total_reg_epoch = np.mean(epoch_reg_losses)
+            total_cls_epoch = np.mean(epoch_cls_losses)
             print('=' * 89)
-            print (f'| End epoch {self.epoch} | iteration {self.iteration} | [train] mean loss {loss_epoch} |')
-            self.tb_writer.add_scalar('Loss epoch/train', loss_epoch, self.epoch)
+            print (f'| End epoch {self.epoch} | iteration {self.iteration} | [train] mean loss {total_loss_epoch} |')
+            self.tb_writer.add_scalar('Loss epoch/train', total_loss_epoch, self.epoch)
+            self.tb_writer.add_scalar('Regression Loss epoch/train', total_reg_epoch, self.epoch)
+            self.tb_writer.add_scalar('Classification Loss epoch/train', total_cls_epoch, self.epoch)
             # Compute validation per each epoch
             self.validation()
             # Scheduler step, update learning rate
@@ -231,7 +239,9 @@ class TransformerTrain ():
         # Set the network in evaluation mode
         self.model.eval()
         
-        validation_losses = []
+        validation_total_losses = []
+        validation_reg_losses = []
+        validation_cls_losses = []
         minADE_metrics = []
         minFDE_metrics = []
         mr_metrics = []
@@ -256,8 +266,10 @@ class TransformerTrain ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
-                validation_losses.append(loss.detach().cpu().numpy())
+                total_loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj)
+                validation_total_losses.append(total_loss.detach().cpu().numpy())
+                validation_reg_losses.append(reg_loss.detach().cpu().numpy())
+                validation_cls_losses.append(cls_loss.detach().cpu().numpy())
                 # ----------------------------------------------------------------------- #
                 # Compute metrics
                 # get the best agent --> The best here refers to the trajectory that has the minimum endpoint error
@@ -272,7 +284,9 @@ class TransformerTrain ():
         self.save_model('check')
         
         # Save the last validation error
-        self.last_validation_loss = np.mean(validation_losses)
+        self.last_validation_loss = np.mean(validation_total_losses)
+        validation_reg_loss = np.mean(validation_reg_losses)
+        validation_cls_loss = np.mean(validation_cls_losses)
         if (self.last_validation_loss < self.best_validation_loss):
             self.best_validation_loss = self.last_validation_loss
             self.best_epoch = self.epoch
@@ -287,6 +301,9 @@ class TransformerTrain ():
         print(Fore.GREEN + '=' * 89 + Fore.RESET)
         # Write in tensorboard
         self.tb_writer.add_scalar('Loss epoch/validation', self.last_validation_loss, self.epoch)
+        self.tb_writer.add_scalar('Loss Regression epoch/validation', validation_reg_loss, self.epoch)
+        self.tb_writer.add_scalar('Loss Classification epoch/validation', validation_cls_loss, self.epoch)
+        # Write metrics
         self.tb_writer.add_scalar('minADE epoch/validation', np.mean(minADE_metrics), self.epoch)
         self.tb_writer.add_scalar('minFDE epoch/validation', np.mean(minFDE_metrics), self.epoch)
         self.tb_writer.add_scalar('MR epoch/validation', np.mean(mr_metrics), self.epoch)
