@@ -78,7 +78,7 @@ class TransformerEvaluation ():
         self.dim_feedforward = model_config['dim_feedforward']
         self.num_queries = model_config['num_queries']
         self.pose_dim = model_config['pose_dim']
-        self.dec_out_size = model_config['dec_out_size']
+        self.out_feats_size = model_config['out_feats_size']
         self.future_size = model_config['future_size']
         self.subgraph_width = model_config['subgraph_width']
         self.num_subgraph_layers = model_config['num_subgraph_layers']
@@ -101,7 +101,7 @@ class TransformerEvaluation ():
         self.experiment_name = main_exp_name + "_d_model_" + str(self.d_model) + "_nhead_" + str(self.nhead) + "_N_" + str(self.num_encoder_layers) + "_dffs_" + str(self.dim_feedforward)  + "_lseq_" + str(self.future_size)
         # ---------------------------------------------------------------------------------------------------- #
         # Get the model
-        self.model = TransTraj (pose_dim=self.pose_dim, dec_out_size=self.dec_out_size, num_queries=self.num_queries,
+        self.model = TransTraj (pose_dim=self.pose_dim, out_feats_size=self.out_feats_size, num_queries=self.num_queries,
                                 subgraph_width=self.subgraph_width, num_subgraph_layers=self.num_subgraph_layers, lane_channels=self.lane_channels,
                                 future_size=self.future_size,
                                 d_model=self.d_model, nhead=self.nhead, N=self.num_encoder_layers, dim_feedforward=self.dim_feedforward, dropout=self.dropout).to(self.device)
