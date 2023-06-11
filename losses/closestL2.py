@@ -35,7 +35,7 @@ class ClosestL2Loss (nn.Module):
         masked_reg_loss = (min_reg_loss * valid_agents_mask).sum(-1) # [BS]
         return masked_reg_loss.mean()
     # ===================================================================================== #
-    def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, offset_gt_trajs: torch.Tensor) -> torch.Tensor:
+    def forward (self, pred_trajs: torch.Tensor, pred_scores: torch.Tensor, gt_trajs: torch.Tensor, offset_gt_trajs: torch.Tensor = None) -> torch.Tensor:
         """Forward function
 
         Args:
@@ -59,9 +59,9 @@ class ClosestL2Loss (nn.Module):
         one_hot_vector, _ = self.get_one_hot_vector_by_distance (pred_trajs, gt_overdim)
         pred_scores = pred_scores.permute(0, 2, 1)
         one_hot_vector = one_hot_vector.permute(0, 2, 1)
-        cls_loss = self.class_loss_fn(pred_scores, one_hot_vector) # [BS, A]
+        cls_loss = self.class_loss_fn(pred_scores, one_hot_vector) # [BS, A, K]
         valid_agents_mask = valid_agents_mask.float()
-        mean_cls_loss_masked = (cls_loss * valid_agents_mask).sum(-1) / valid_agents_mask.sum(-1) # [BS]
+        mean_cls_loss_masked = (cls_loss * valid_agents_mask).sum(-1) # [BS]
         # ----------------------------------------------------------------------- #        
         # Compute regresion loss
         # Get the loss with respect the best prediction
@@ -70,7 +70,7 @@ class ClosestL2Loss (nn.Module):
         # Final loss
         loss = reg_loss + mean_cls_loss_masked.mean()
         
-        return loss
+        return loss, reg_loss, mean_cls_loss_masked.mean()
 
 class LaplaceNLLLoss(nn.Module):
 
