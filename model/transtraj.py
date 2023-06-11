@@ -13,7 +13,7 @@ class TransTraj (nn.Module):
     Args:
         nn (_type_): _description_
     """
-    def __init__(self, pose_dim: int, dec_out_size: int, num_queries: int,
+    def __init__(self, pose_dim: int, out_feats_size: int, num_queries: int,
                  lane_channels: int, subgraph_width: int, num_subgraph_layers: int,
                  future_size: int = 60,
                  d_model = 512, nhead = 8, N = 6, dim_feedforward = 2048, dropout=0.1):
@@ -21,9 +21,9 @@ class TransTraj (nn.Module):
 
         Args:
             pose_dim (int): Pose dimension [x,y, yaw, v ...] || Encoder input size
-            dec_out_size (int): Decoder output size
-            num_queries (int): Number of trajectories
-            future_size (int, optional): the output trajectory size
+            out_feats_size (int): Output features size (D_out)
+            num_queries (int): Number of trajectories (K)
+            future_size (int, optional): the output trajectory size (F)
             d_model (int, optional): the number of expected features in the input -> embedding dimension. Defaults to 512.
             nhead (int, optional): the number of heads in the multiheadattention models. Defaults to 8.
             N (int, optional): the number of sub-encoder-layers in the encoder -> number of nn.TransformerEncoderLayer in nn.TransformerEncoder. Defaults to 6.
@@ -36,7 +36,7 @@ class TransTraj (nn.Module):
         self.future_size = future_size
         self.d_model = d_model
         self.pose_dim = pose_dim
-        self.dec_out_size = dec_out_size
+        self.out_feats_size = out_feats_size
         # ----------------------------------------------------------------------- #
         self.enc_linear_embedding = LinearEmbedding(pose_dim, d_model)
         self.pos_encoder = PositionalEncoding(d_model, dropout)
@@ -72,13 +72,14 @@ class TransTraj (nn.Module):
         #                                  nn.Linear(d_model, d_model_2, bias=True), 
         #                                  nn.Linear(d_model_2, dec_out_size, bias=True) )
         
+        output_dim_linear = int(self.out_feats_size * self.future_size)
         self.reg_mlp = nn.Sequential(
                        nn.Linear(d_model, d_model*2, bias=True),
                        nn.LayerNorm(d_model*2),
                        nn.ReLU(),
                        nn.Dropout(dropout),
                        nn.Linear(d_model*2, d_model, bias=True),
-                       nn.Linear(d_model, dec_out_size, bias=True), # Dim_features (x,y ..) * N Frames futuros --> view (60, pose_dim (2 or 6))
+                       nn.Linear(d_model, output_dim_linear, bias=True), # Dim_features (x,y ..) * N Frames futuros --> view (60, pose_dim (2 or 6))
                        nn.Dropout(dropout)) 
         
         self.cls_FFN = PointerwiseFeedforward(d_model, 2*d_model, dropout=dropout)
@@ -126,7 +127,6 @@ class TransTraj (nn.Module):
         bs = historic_traj.shape[0]
         num_agents = historic_traj.shape[1]
         historic_timesteps = historic_traj.shape[2]
-        num_features = historic_traj.shape[3]
         # ----------------------------------------------------------------------- #
         # Apply linear embedding with the positional encoding
         historic_traj = self.enc_linear_embedding(historic_traj) # [BS, A, H, d_model]      
@@ -149,7 +149,7 @@ class TransTraj (nn.Module):
         out = out.view (bs, num_agents, num_traj, -1)
         # Get the output i the expected dimensions
         pred: torch.Tensor = self.reg_mlp(out)
-        pred = pred.view(bs, num_agents, num_traj, -1, num_features) # [bs, A, K, F, out feats]
+        pred = pred.view(bs, num_agents, num_traj, -1, self.out_feats_size) # [bs, A, K, F, out feats]
         num_traj = pred.shape[1] # Number of predictions (K)
         
         cls_h = self.cls_FFN(out)
