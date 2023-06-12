@@ -183,7 +183,7 @@ class TransformerEvaluation ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
+                loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
                 validation_losses.append(loss.detach().cpu().numpy())
                 softmax = nn.Softmax(dim=-1)
                 scores = softmax(conf)
