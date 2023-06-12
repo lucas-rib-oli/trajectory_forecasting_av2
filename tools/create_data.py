@@ -91,6 +91,7 @@ def prepare_data_av2(split: str):
         # ----------------------------------------------------------------------- #
         raw_scene_src_actor_traj_id: Dict[str, npt.NDArray] = {}
         raw_scene_tgt_actor_traj_id: Dict[str, npt.NDArray] = {}
+        tracks_categories: Dict[str, int] = {}
         # Variables to store
         scene_data = {}
         # ----------------------------------------------------------------------- #
@@ -119,6 +120,7 @@ def prepare_data_av2(split: str):
             
             raw_scene_src_actor_traj_id[track.track_id] = src_actor_trajectory
             raw_scene_tgt_actor_traj_id[track.track_id] = tgt_actor_trajectory
+            tracks_categories[track.track_id] = track.category.value
         # ----------------------------------------------------------------------- #
         if scenario.focal_track_id in raw_scene_tgt_actor_traj_id.keys():
             # Get the final observed trajectory of the focal agent
@@ -238,7 +240,8 @@ def prepare_data_av2(split: str):
                                "historic": src_agent_coordinate_tf,
                                "future": tgt_agent_coordinate_tf,
                                "offset_historic": src_actor_offset,
-                               "offset_future": tgt_actor_offset
+                               "offset_future": tgt_actor_offset,
+                               "category" : tracks_categories[track_id]
                              }
                 scene_agents_data.append (agent_data)
             # ----------------------------------------------------------------------- #
