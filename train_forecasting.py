@@ -171,7 +171,7 @@ class TransformerTrain ():
                 check_ram_memory ()
                 
                 # Get the data from the dataloader
-                historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
+                historic_traj: torch.Tensor = data['historic'] # [BS, A, H, D]
                 future_traj: torch.Tensor = data['future']
                 # offset_future_traj: torch.Tensor = data['offset_future']
                 lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1) # Delete Z-coordinate
