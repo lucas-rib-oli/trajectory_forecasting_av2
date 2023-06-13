@@ -48,6 +48,11 @@ LANE_MARKTYPE_DICT = {
     "NONE": 14,
     "UNKNOWN": 15
 }
+
+# ===================================================================================== #
+def normalice_heading (angle):
+    norm_angle = (angle + np.pi) % (2 * np.pi) - np.pi
+    return norm_angle
 # ===================================================================================== #
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -114,10 +119,10 @@ class TransformerPrediction ():
         self.load_model ('check')
     # ---------------------------------------------------------------------------------------------------- #
     def prepare_data_av2 (self, split: str, num_scenerarios: int = 100):
-        argoverse_scenario_dir = os.path.join(args.root_path, 'motion_forecasting', split)
+        argoverse_scenario_dir = os.path.join(args.root_path, split)
         argoverse_scenario_dir = Path(argoverse_scenario_dir)
         all_scenario_files = sorted(argoverse_scenario_dir.rglob("*.parquet"))
-        all_scenario_files = all_scenario_files[621:650]
+        all_scenario_files = all_scenario_files[954:956]
         # ----------------------------------------------------------------------- #
         src_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
         tgt_actor_trajectory_by_id: Dict[str, npt.NDArray] = {}
@@ -186,17 +191,17 @@ class TransformerPrediction ():
                 # Get the focal heading
                 focal_heading = np.arctan2(sin_heading,
                                         cos_heading)
-                
+                sin_rot = np.sin(-focal_heading)
+                cos_rot = np.cos(-focal_heading)
                 src_zeros_vector = np.zeros((src_full_traj.shape[0], 1))
                 src_ones_vector = np.ones((src_full_traj.shape[0], 1))
                 tgt_zeros_vector = np.zeros((tgt_full_traj.shape[0], 1))
                 tgt_ones_vector = np.ones((tgt_full_traj.shape[0], 1))
                 
-                rot_matrix = np.array([[cos_heading, -sin_heading, 0, 0],
-                                    [sin_heading,  cos_heading, 0, 0],
-                                    [          0,            0, 1, 0],
-                                    [          0,            0, 0, 1]])
-                
+                rot_matrix = np.array([[cos_rot, -sin_rot, 0, 0],
+                                       [sin_rot,  cos_rot, 0, 0],
+                                       [      0,        0, 1, 0],
+                                       [      0,        0, 0, 1]])
                 
                 # Transform the lane polylines
                 scene_lanes_data: List[Dict] = []
@@ -270,8 +275,8 @@ class TransformerPrediction ():
                     src_agent_velocity_tf = src_agent_velocity_tf[:,0:2] # Get only the components
                     tgt_agent_velocity_tf = tgt_agent_velocity_tf[:,0:2]
                     # Transformed heading
-                    src_agent_heading_tf = src_agent_heading - focal_heading
-                    tgt_agent_heading_tf = tgt_agent_heading - focal_heading
+                    src_agent_heading_tf = normalice_heading (src_agent_heading - focal_heading)
+                    tgt_agent_heading_tf = normalice_heading (tgt_agent_heading - focal_heading)
                     # Normalice heading [-pi, pi)
                     src_agent_heading_tf = (src_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
                     tgt_agent_heading_tf = (tgt_agent_heading_tf + np.pi) % (2 * np.pi) - np.pi
@@ -392,7 +397,7 @@ class TransformerPrediction ():
                 historic_traj: torch.Tensor = data['historic'] # (bs, sequence length, feature number)
                 future_traj: torch.Tensor = data['future']
                 offset_future_traj: torch.Tensor = data['offset_future']
-                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:-1]],dim=-1)
+                lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1)
                 
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
@@ -404,7 +409,7 @@ class TransformerPrediction ():
                 # src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(historic_traj, future_traj)
                 # Output model
                                 # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None)
+                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None, lanes_padding_mask=None)
                 index_with_highest_conf = torch.argmax(conf, dim=-1)
                 if args.save_figs:
                     plt.figure(figsize=(20,11))
