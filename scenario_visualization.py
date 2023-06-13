@@ -73,6 +73,25 @@ _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.RIDERLESS_BICYCLE,
 }
 
+# Lane class dict
+LANE_MARKTYPE_DICT = {
+    "DASH_SOLID_YELLOW": 1,
+    "DASH_SOLID_WHITE": 2,
+    "DASHED_WHITE": 3,
+    "DASHED_YELLOW": 4,
+    "DOUBLE_SOLID_YELLOW": 5,
+    "DOUBLE_SOLID_WHITE": 6,
+    "DOUBLE_DASH_YELLOW": 7,
+    "DOUBLE_DASH_WHITE": 8,
+    "SOLID_YELLOW": 9,
+    "SOLID_WHITE": 10,
+    "SOLID_DASH_WHITE": 11,
+    "SOLID_DASH_YELLOW": 12,
+    "SOLID_BLUE": 13,
+    "NONE": 14,
+    "UNKNOWN": 15
+}
+
 # ===================================================================================== #
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -115,7 +134,7 @@ def get_model ():
     lane_channels = model_config['lane_channels']
     
     train_config = cfg.get('train')
-    device = train_config['device']
+    device = 'cpu'
     num_epochs = train_config['num_epochs']
     batch_size = train_config['batch_size']
     num_workers = train_config['num_workers']
@@ -221,18 +240,39 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         track.object_states = transformed_object_states
     _plot_actor_tracks(ax, scenario, _OBS_DURATION_TIMESTEPS - 1)
     # ----------------------------------------------------------------------- #
-    _plot_actor_predictions (ax, scenario, model)
-    # ----------------------------------------------------------------------- #
+    scene_lanes_data: List[Dict] = []
     # Transform map to target-centric
-    for lane_segment in static_map.vector_lane_segments.values():
+    for id, lane_segment in static_map.vector_lane_segments.items():
         left_lane_boundary = lane_segment.left_lane_boundary.xyz
         right_lane_boundary = lane_segment.right_lane_boundary.xyz
-                
+        centerline = static_map.get_lane_segment_centerline(id)
+        
         left_lane_boundary = np.append(left_lane_boundary, np.ones((left_lane_boundary.shape[0], 1)), axis=1)
         right_lane_boundary = np.append(right_lane_boundary, np.ones((right_lane_boundary.shape[0], 1)), axis=1)
+        centerline = np.append(centerline, np.ones((centerline.shape[0], 1)), axis=1)
+        
         transformed_left_lane_boundary = np.dot(tf_matrix, left_lane_boundary.T).T[:, :3]
         transformed_right_lane_boundary = np.dot(tf_matrix, right_lane_boundary.T).T[:, :3]
+        transformed_centerline = np.dot(tf_matrix, centerline.T).T[:, :3]
         
+        # Interpoalte
+        transformed_left_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=transformed_left_lane_boundary[:, :3])
+        transformed_right_lane_boundary = interp_arc (NUM_CENTERLINE_INTERP_PTS, points=transformed_right_lane_boundary[:, :3])
+        
+        lane_data = {"ID": lane_segment.id,
+                    "left_lane_boundary": transformed_left_lane_boundary,
+                    "right_lane_boundary": transformed_right_lane_boundary,
+                    "centerline": transformed_centerline,
+                    "is_intersection": lane_segment.is_intersection,
+                    "lane_type": lane_segment.lane_type,
+                    "left_mark_type": LANE_MARKTYPE_DICT[lane_segment.left_mark_type],
+                    "right_mark_type": LANE_MARKTYPE_DICT[lane_segment.right_mark_type],
+                    # "right_neighbor_id": lane_segment.right_neighbor_id,
+                    # "left_neighbor_id": lane_segment.left_neighbor_id
+                    }
+        scene_lanes_data.append(lane_data)
+        # ----------------------------------------------------------------------- #
+        # Plot
         left_lane_color = _LANE_SEGMET_COLOR[lane_segment.left_mark_type]
         right_lane_color = _LANE_SEGMET_COLOR[lane_segment.right_mark_type]
         
@@ -261,7 +301,8 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         
         concatenated_lanes = np.concatenate ((transformed_left_lane_boundary, transformed_right_lane_boundary[::-1]), axis=0)
         _plot_polygons([concatenated_lanes], alpha=1, color=_DRIVABLE_AREA_COLOR)
-        
+    # ----------------------------------------------------------------------- #
+    _plot_actor_predictions (ax, scenario, scene_lanes_data, model)
     # ----------------------------------------------------------------------- #
     # Transform drivable area to target-centric  
     # for drivable_area in static_map.vector_drivable_areas.values():
@@ -422,7 +463,7 @@ def _plot_actor_tracks(ax: plt.Axes, scenario: ArgoverseScenario, timestep: int)
 
     return track_bounds
 
-def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, model: TransTraj):
+def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, scene_lane_data, model: TransTraj):
     
     for track in scenario.tracks:
         # Only predict focal track
@@ -434,6 +475,24 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, model: T
         src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
         # Get target actor trajectory and heading history -> forescated or predicted trajectory
         tgt_actor_trajectory = actor_state[_OBS_DURATION_TIMESTEPS:_TOTAL_DURATION_TIMESTEPS]
+        # ----------------------------------------------------------------------- #
+        # Prepare to the model
+        lanes = []
+        for lane_data in scene_lane_data:
+            shape_vector = lane_data['left_lane_boundary'].shape
+            is_intersection_v = np.repeat (int(lane_data['is_intersection']), shape_vector[0]).reshape(shape_vector[0], 1)
+            left_mark_type_v = np.repeat (lane_data['left_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
+            right_mark_type_v = np.repeat (lane_data['right_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
+            id_v = np.repeat (lane_data['ID'], shape_vector[0]).reshape(shape_vector[0], 1)
+            left_lane_feat = np.hstack ((lane_data['left_lane_boundary'], is_intersection_v, left_mark_type_v, id_v))
+            right_lane_feat = np.hstack ((lane_data['right_lane_boundary'], is_intersection_v, right_mark_type_v, id_v))
+            lanes.append(left_lane_feat)
+            lanes.append(right_lane_feat)
+        lanes = np.asarray(lanes)
+        lanes = torch.tensor(lanes, dtype=torch.float32).unsqueeze(0)
+        lanes: torch.Tensor = torch.cat ([lanes[:,:,:,:2], lanes[:,:,:,3:]],dim=-1) # Delete Z-coordinate
+        print ('lanes shape: ', lanes.shape)
+        # ----------------------------------------------------------------------- #
         # Plot future
         color = '#8CED8C'
         plt.plot(
@@ -461,7 +520,7 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, model: T
             historic_traj = torch.tensor(src_actor_trajectory, dtype=torch.float32).unsqueeze(0)
             future_traj = torch.tensor(tgt_actor_trajectory, dtype=torch.float32).unsqueeze(0)
             
-            pred, conf = model (historic_traj, future_traj, src_mask=None, tgt_mask=None)
+            pred, conf = model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, lanes_padding_mask=None) 
             pred = pred.squeeze(0)
             pred = pred.cpu().numpy()
             index_with_highest_conf = torch.argmax(conf, dim=-1)
