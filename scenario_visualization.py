@@ -37,13 +37,34 @@ _ESTIMATED_CYCLIST_LENGTH_M: Final[float] = 2.0
 _ESTIMATED_CYCLIST_WIDTH_M: Final[float] = 0.7
 _PLOT_BOUNDS_BUFFER_M: Final[float] = 30.0
 
-_DRIVABLE_AREA_COLOR: Final[str] = "#7A7A7A"
+_DRIVABLE_AREA_COLOR: Final[str] = "#262626"
 _LANE_SEGMENT_COLOR: Final[str] = "#E0E0E0"
+LANE_SEGMENT_COLOR_YELLOW: Final[str] = "#F5F533"
+LANE_SEGMENT_COLOR_WHITE: Final[str] = "#E0E0E0"
+LANE_SEGMENT_COLOR_BLUE: Final[str] = "#00AEFF"
+_LANE_SEGMET_COLOR: Dict[str,str] = {'DASH_SOLID_YELLOW': LANE_SEGMENT_COLOR_YELLOW,
+                                    'DASH_SOLID_WHITE': LANE_SEGMENT_COLOR_WHITE,
+                                    'DASHED_WHITE': LANE_SEGMENT_COLOR_WHITE,
+                                    'DASHED_YELLOW': LANE_SEGMENT_COLOR_YELLOW,
+                                    'DOUBLE_SOLID_YELLOW': LANE_SEGMENT_COLOR_YELLOW,
+                                    'DOUBLE_SOLID_WHITE': LANE_SEGMENT_COLOR_WHITE,
+                                    'DOUBLE_DASH_YELLOW': LANE_SEGMENT_COLOR_YELLOW,
+                                    'DOUBLE_DASH_WHITE': LANE_SEGMENT_COLOR_WHITE,
+                                    'SOLID_YELLOW': LANE_SEGMENT_COLOR_YELLOW,
+                                    'SOLID_WHITE': LANE_SEGMENT_COLOR_WHITE,
+                                    'SOLID_DASH_WHITE': LANE_SEGMENT_COLOR_WHITE,
+                                    'SOLID_DASH_YELLOW': LANE_SEGMENT_COLOR_YELLOW,
+                                    'SOLID_BLUE': LANE_SEGMENT_COLOR_BLUE,
+                                    'NONE': LANE_SEGMENT_COLOR_WHITE,
+                                    'UNKNOWN': LANE_SEGMENT_COLOR_WHITE}
+_PEDESTRIAN_CROSSING_COLOR = "#BA1313"
 
-_DEFAULT_ACTOR_COLOR: Final[str] = "#D3E8EF"
-_FOCAL_AGENT_COLOR: Final[str] = "#ECA25B"
+_DEFAULT_ACTOR_COLOR: Final[str] = "#969693"
+_FOCAL_AGENT_COLOR: Final[str] = "#8527B8"
+_SCORED_AGENT_COLOR: Final[str] = "#8527B8"
 _AV_COLOR: Final[str] = "#007672"
 _BOUNDING_BOX_ZORDER: Final[int] = 100  # Ensure actor bounding boxes are plotted on top of all map elements
+_FORECASTED_TRAJECTORIES_ZORDER: Final[int] = 95
 
 _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.STATIC,
@@ -173,6 +194,7 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
                           [                   0.0,                 0.0, 0.0,                                                                    1.0]])
     
     _, ax = plt.subplots()
+    ax.set_facecolor('darkgray')
     # ----------------------------------------------------------------------- #
     # Transform coordinates to target-centric
     for track in scenario.tracks:
@@ -211,22 +233,42 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         transformed_left_lane_boundary = np.dot(tf_matrix, left_lane_boundary.T).T[:, :3]
         transformed_right_lane_boundary = np.dot(tf_matrix, right_lane_boundary.T).T[:, :3]
         
-        _plot_polylines(
-            [
-                transformed_left_lane_boundary,
-                transformed_right_lane_boundary,
-            ],
-            line_width=0.5,
-            color=_LANE_SEGMENT_COLOR,
+        left_lane_color = _LANE_SEGMET_COLOR[lane_segment.left_mark_type]
+        right_lane_color = _LANE_SEGMET_COLOR[lane_segment.right_mark_type]
+        
+        if 'SOLID' in lane_segment.left_mark_type:
+            left_style = '-'
+        elif 'DASH' in lane_segment.left_mark_type:
+            left_style = '--'
+        else:
+            left_style = '-'
+        if 'SOLID' in lane_segment.right_mark_type:
+            right_style = '-'
+        elif 'DASH' in lane_segment.right_mark_type:
+            right_style = '--'
+        else:
+            right_style = '-'
+        
+        _plot_lane_segments(
+            transformed_left_lane_boundary,
+            transformed_right_lane_boundary,
+            line_width=1.0,
+            left_lane_color=left_lane_color,
+            right_lane_color=right_lane_color,
+            left_style=left_style,
+            right_style=right_style,
         )
+        
+        concatenated_lanes = np.concatenate ((transformed_left_lane_boundary, transformed_right_lane_boundary[::-1]), axis=0)
+        _plot_polygons([concatenated_lanes], alpha=1, color=_DRIVABLE_AREA_COLOR)
         
     # ----------------------------------------------------------------------- #
     # Transform drivable area to target-centric  
-    for drivable_area in static_map.vector_drivable_areas.values():
-        drivable_area_xyz = np.append(drivable_area.xyz, np.ones((drivable_area.xyz.shape[0], 1)), axis=1)
-        transformed_drivable_area_xyz = np.dot(tf_matrix, drivable_area_xyz.T).T[:, :3]
+    # for drivable_area in static_map.vector_drivable_areas.values():
+    #     drivable_area_xyz = np.append(drivable_area.xyz, np.ones((drivable_area.xyz.shape[0], 1)), axis=1)
+    #     transformed_drivable_area_xyz = np.dot(tf_matrix, drivable_area_xyz.T).T[:, :3]
         
-        _plot_polygons([transformed_drivable_area_xyz], alpha=0.5, color=_DRIVABLE_AREA_COLOR)
+    #     _plot_polygons([transformed_drivable_area_xyz], alpha=0.8, color=_DRIVABLE_AREA_COLOR)
     # ----------------------------------------------------------------------- #
     for ped_xing in static_map.vector_pedestrian_crossings.values():
         edge1_xyz = np.append(ped_xing.edge1.xyz, np.ones((ped_xing.edge1.xyz.shape[0], 1)), axis=1)
@@ -234,10 +276,12 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         transformed_edge1_xyz = np.dot(tf_matrix, edge1_xyz.T).T[:, :3]
         transformed_edge2_xyz = np.dot(tf_matrix, edge2_xyz.T).T[:, :3]
         
-        _plot_polylines([transformed_edge1_xyz, transformed_edge2_xyz ], alpha=1.0, color=_LANE_SEGMENT_COLOR)
+        transformed_edge1_xyz = transformed_edge1_xyz[::-1]
+        prueba = np.concatenate([transformed_edge1_xyz, transformed_edge2_xyz ], axis=0)
+        _plot_polygons([prueba ], alpha=0.6, color=_PEDESTRIAN_CROSSING_COLOR)
     # ----------------------------------------------------------------------- #
     plt.show()
-    exit(0)
+    return
     for timestep in range(_OBS_DURATION_TIMESTEPS + _PRED_DURATION_TIMESTEPS):
         _, ax = plt.subplots()
 
@@ -279,7 +323,7 @@ def _plot_static_map_elements(static_map: ArgoverseStaticMap, show_ped_xings: bo
     """
     # Plot drivable areas
     for drivable_area in static_map.vector_drivable_areas.values():
-        _plot_polygons([drivable_area.xyz], alpha=0.5, color=_DRIVABLE_AREA_COLOR)
+        _plot_polygons([drivable_area.xyz], alpha=0.8, color=_DRIVABLE_AREA_COLOR)
 
     # Plot lane segments
     for lane_segment in static_map.vector_lane_segments.values():
@@ -343,14 +387,14 @@ def _plot_actor_tracks(ax: plt.Axes, scenario: ArgoverseScenario, timestep: int)
             continue
 
         
-        if track.category == track.category == TrackCategory.FOCAL_TRACK:
+        if track.category == TrackCategory.FOCAL_TRACK:
             # Plot bounding boxes for all vehicles and cyclists
             if track.object_type == ObjectType.VEHICLE:
                 
-                _plot_actor_bounding_box_gradient(
+                _plot_actor_bounding_box(
                     ax,
-                    actor_trajectory,
-                    actor_headings,
+                    actor_trajectory[-1],
+                    actor_headings[-1],
                     track_color,
                     (_ESTIMATED_VEHICLE_LENGTH_M, _ESTIMATED_VEHICLE_WIDTH_M),
                 )
@@ -390,6 +434,28 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, model: T
         src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
         # Get target actor trajectory and heading history -> forescated or predicted trajectory
         tgt_actor_trajectory = actor_state[_OBS_DURATION_TIMESTEPS:_TOTAL_DURATION_TIMESTEPS]
+        # Plot future
+        color = '#8CED8C'
+        plt.plot(
+            tgt_actor_trajectory[:, 0],
+            tgt_actor_trajectory[:, 1],
+            color=color,
+            label="GT Trajectory",
+            alpha=1,
+            linewidth=3.2,
+            zorder=_FORECASTED_TRAJECTORIES_ZORDER + 1,
+            ls = "--")
+        plt.arrow(
+            tgt_actor_trajectory[-2, 0], 
+            tgt_actor_trajectory[-2, 1],
+            tgt_actor_trajectory[-1, 0] - tgt_actor_trajectory[-2, 0],
+            tgt_actor_trajectory[-1, 1] - tgt_actor_trajectory[-2, 1],
+            color=color,
+            label="GT Trajectory",
+            alpha=1,
+            linewidth=3.2,
+            zorder=_FORECASTED_TRAJECTORIES_ZORDER,
+            head_width=1.1)
         # Inference
         with torch.no_grad():
             historic_traj = torch.tensor(src_actor_trajectory, dtype=torch.float32).unsqueeze(0)
@@ -403,42 +469,59 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, model: T
             K = pred.shape[0]
             for k in range(K):
                 if k != index_with_highest_conf[0]:
-                    color = (0.2, 0.2, 0.2, 0.4)
+                    color = '#D7ADED'
                     label = 'other prediction'
                     x = pred[k,:,0]
                     y = pred[k,:,1]
-                    plt.plot (pred[k,:,0], pred[k,:,1], '--', color=color, label=label)
-                    dx = x[59] - x[58]
-                    dy = y[59] - y[58]
-                    size = 2.5
-                    x_start = x[58]
-                    y_start = y[58]
-                    arrow = FancyArrow(x_start, y_start, dx, dy, color=color, width=0,
-                                       head_width=size, head_length=size, 
-                                       label=label,length_includes_head=True, 
-                                       overhang=0.3, zorder=10)
-                    ax.add_patch(arrow)
+                    plt.plot(
+                        pred[k, :, 0],
+                        pred[k, :, 1],
+                        color=color,
+                        label="Forecasted Trajectory",
+                        alpha=1,
+                        linewidth=3.2,
+                        zorder=_FORECASTED_TRAJECTORIES_ZORDER,
+                        ls = "--")
+
+                    plt.arrow(
+                        pred[k, -2, 0], 
+                        pred[k, -2, 1],
+                        pred[k, -1, 0] - pred[k, -2, 0],
+                        pred[k, -1, 1] - pred[k, -2, 1],
+                        color=color,
+                        label="Forecasted Trajectory",
+                        alpha=1,
+                        linewidth=3.2,
+                        zorder=_FORECASTED_TRAJECTORIES_ZORDER,
+                        head_width=1.1)
+                    
             # Plot best prediction
-            color = (1,1,0)
+            color = '#FAFA82'
             label = 'best prediction'
             k = index_with_highest_conf[0]
             x = pred[k,:,0]
             y = pred[k,:,1]
             
-            
-            plt.plot (pred[k,:,0], pred[k,:,1], color=color, label=label, linestyle='--') # marker = 's', markevery=1
-            
-            dx = x[59] - x[58]
-            dy = y[59] - y[58]
-            size = 2.5
-            x_start = x[58]
-            y_start = y[58]
-
-            arrow = FancyArrow(x_start, y_start, dx, dy, color=color, width=0, 
-                               head_width=size, head_length=size, 
-                               label=label,length_includes_head=True, 
-                               overhang=0.3, zorder=10)
-            ax.add_patch(arrow)
+            plt.plot(
+                pred[k, :, 0],
+                pred[k, :, 1],
+                color=color,
+                label="Best Forecasted Trajectory",
+                alpha=1,
+                linewidth=3.2,
+                zorder=_FORECASTED_TRAJECTORIES_ZORDER + 1,
+                ls = "--")
+            plt.arrow(
+                pred[k, -2, 0], 
+                pred[k, -2, 1],
+                pred[k, -1, 0] - pred[k, -2, 0],
+                pred[k, -1, 1] - pred[k, -2, 1],
+                color=color,
+                label="Best Forecasted Trajectory",
+                alpha=1,
+                linewidth=3.2,
+                zorder=_FORECASTED_TRAJECTORIES_ZORDER,
+                head_width=1.1)
             
 def _plot_polylines(
     polylines: Sequence[NDArrayFloat],
@@ -460,6 +543,27 @@ def _plot_polylines(
     for polyline in polylines:
         plt.plot(polyline[:, 0], polyline[:, 1], style, linewidth=line_width, color=color, alpha=alpha)
 
+def _plot_lane_segments(
+    left_lane_segment: Sequence[NDArrayFloat],
+    right_lane_segment: Sequence[NDArrayFloat],
+    line_width: float = 1.0,
+    alpha: float = 1.0,
+    left_lane_color: str = 'r',
+    right_lane_color: str = 'r',
+    left_style: str = "-",
+    right_style: str = "-",
+) -> None:
+    """Plot a group of polylines with the specified config.
+
+    Args:
+        polylines: Collection of (N, 2) polylines to plot.
+        style: Style of the line to plot (e.g. `-` for solid, `--` for dashed)
+        line_width: Desired width for the plotted lines.
+        alpha: Desired alpha for the plotted lines.
+        color: Desired color for the plotted lines.
+    """
+    plt.plot(left_lane_segment[:, 0], left_lane_segment[:, 1], left_style, linewidth=line_width, color=left_lane_color, alpha=alpha)
+    plt.plot(right_lane_segment[:, 0], right_lane_segment[:, 1], right_style, linewidth=line_width, color=right_lane_color, alpha=alpha)
 
 def _plot_polygons(polygons: Sequence[NDArrayFloat], *, alpha: float = 1.0, color: str = "r") -> None:
     """Plot a group of filled polygons with the specified config.
@@ -492,7 +596,7 @@ def _plot_actor_bounding_box(ax: plt.Axes, cur_location: NDArrayFloat, heading: 
     pivot_y = cur_location[1] - (d / 2) * math.sin(heading + theta_2)
 
     rect = vehicle_bounding_box = Rectangle(
-        (pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), color=color, zorder=_BOUNDING_BOX_ZORDER
+        (pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), facecolor=color, edgecolor='white', zorder=_BOUNDING_BOX_ZORDER
     )
     rect = ax.add_patch(vehicle_bounding_box)
 
@@ -518,10 +622,10 @@ def _plot_actor_bounding_box_gradient (ax: plt.Axes, actor_trajectory: NDArrayFl
         pivot_x = cur_location[0] - (d / 2) * math.cos(heading + theta_2)
         pivot_y = cur_location[1] - (d / 2) * math.sin(heading + theta_2)
         if alpha == 1.0:
-            vehicle_bounding_box = Rectangle((pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), facecolor=color, edgecolor='black', alpha=alpha, zorder=_BOUNDING_BOX_ZORDER)
+            vehicle_bounding_box = Rectangle((pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), facecolor=color, edgecolor='white', alpha=alpha, zorder=_BOUNDING_BOX_ZORDER)
         else:
             zorder = _BOUNDING_BOX_ZORDER - i/(steps + 1)
-            vehicle_bounding_box = Rectangle((pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), color=color, alpha=alpha, zorder=_BOUNDING_BOX_ZORDER - 1)
+            vehicle_bounding_box = Rectangle((pivot_x, pivot_y), bbox_length, bbox_width, np.degrees(heading), color=color, edgecolor='white', alpha=alpha, zorder=_BOUNDING_BOX_ZORDER - 1)
         alpha = 1.0 - i / (steps+1) 
         rect = ax.add_patch(vehicle_bounding_box)
 
