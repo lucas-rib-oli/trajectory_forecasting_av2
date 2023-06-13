@@ -75,7 +75,7 @@ class Av2MotionForecastingDataset (Dataset):
         """
         sample = {}
         scene_agents_data = self.scenes_data[idx]['agents']
-        map_path = os.path.join ('/raid/datasets/argoverse2', self.scenes_data[idx]['map_path'])
+        map_path = self.scenes_data[idx]['map_path']
         historic_trajectories = []
         future_trajectories = []
         historic_offset_trajectories = []
