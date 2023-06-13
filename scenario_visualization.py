@@ -252,7 +252,7 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         _plot_lane_segments(
             transformed_left_lane_boundary,
             transformed_right_lane_boundary,
-            line_width=1.0,
+            line_width=0.6,
             left_lane_color=left_lane_color,
             right_lane_color=right_lane_color,
             left_style=left_style,
