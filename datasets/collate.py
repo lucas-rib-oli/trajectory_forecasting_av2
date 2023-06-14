@@ -2,7 +2,7 @@ import torch
 from typing import List, Dict
 from torch.nn.utils.rnn import pad_sequence
 key_padding = ['lanes', 'historic', 'future', 'offset_historic', 'offset_future']
-key_concatenate = []
+key_concatenate = ['historic_focal', 'future_focal']
 
 def collate_fn (batch: List[Dict[str, torch.Tensor]]):
     keys = batch[0].keys()

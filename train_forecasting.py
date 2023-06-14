@@ -119,7 +119,7 @@ class TransformerTrain ():
         
         # Initialize the loss function
         # self.loss_fn = nn.HuberLoss(reduction='mean')
-        self.loss_fn = NLLLoss()
+        self.loss_fn = ClosestL2Loss()
         # ----------------------------------------------------------------------- #
         self.last_train_loss = np.Inf
         self.last_validation_loss = np.Inf
@@ -173,12 +173,13 @@ class TransformerTrain ():
                 # Get the data from the dataloader
                 historic_traj: torch.Tensor = data['historic'] # [BS, A, H, D]
                 future_traj: torch.Tensor = data['future']
+                future_traj_focal: torch.Tensor = data['future_focal']
                 # offset_future_traj: torch.Tensor = data['offset_future']
                 lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1) # Delete Z-coordinate
-                
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
+                future_traj_focal = future_traj_focal.to(self.device)
                 # offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
                 # 0, 0, 0 indicate the start of the sequence
@@ -192,7 +193,10 @@ class TransformerTrain ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                total_loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj)
+                # Omit agent axis
+                pred = pred.squeeze(1)
+                conf = conf.squeeze(1)
+                total_loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj_focal)
                 # loss = loss.mean()
                 # ----------------------------------------------------------------------- #
                 # Optimizer part
@@ -252,11 +256,13 @@ class TransformerTrain ():
             with torch.no_grad():                
                 historic_traj: torch.Tensor = data['historic']
                 future_traj: torch.Tensor = data['future']
+                future_traj_focal: torch.Tensor = data['future_focal']
                 offset_future_traj: torch.Tensor = data['offset_future']
                 lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1) # Delete Z-coordinate
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
+                future_traj_focal = future_traj_focal.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
                 # ----------------------------------------------------------------------- #
@@ -266,7 +272,7 @@ class TransformerTrain ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                total_loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj)
+                total_loss, reg_loss, cls_loss = self.loss_fn(pred.squeeze(1), conf.squeeze(1), future_traj_focal)
                 validation_total_losses.append(total_loss.detach().cpu().numpy())
                 validation_reg_losses.append(reg_loss.detach().cpu().numpy())
                 validation_cls_losses.append(cls_loss.detach().cpu().numpy())

@@ -125,7 +125,7 @@ class TransTraj (nn.Module):
         """
         # Get dimensions
         bs = historic_traj.shape[0]
-        num_agents = historic_traj.shape[1]
+        num_agents = future_traj.shape[1]
         historic_timesteps = historic_traj.shape[2]
         # ----------------------------------------------------------------------- #
         # Apply linear embedding with the positional encoding

@@ -80,20 +80,30 @@ class Av2MotionForecastingDataset (Dataset):
         future_trajectories = []
         historic_offset_trajectories = []
         future_offset_trajectories = []
-
+        historic_focal_agent = []
+        future_focal_agent = []
         for agent_data in scene_agents_data:
             historic_trajectories.append (agent_data['historic'])
             future_trajectories.append(agent_data['future'])
             historic_offset_trajectories.append (agent_data['offset_historic'])
             future_offset_trajectories.append(agent_data['offset_future'])
+            
+            if agent_data['category'] == 3: # FOCAL_TRACK: int = 3
+                # Save focal agent future trajectory
+                historic_focal_agent.append(agent_data['historic'])
+                future_focal_agent.append(agent_data['future'])
         
         historic_trajectories = np.asarray(historic_trajectories)
         future_trajectories = np.asarray(future_trajectories)
+        historic_focal_agent = np.asarray(historic_focal_agent)
+        future_focal_agent = np.asarray(future_focal_agent)
         historic_offset_trajectories = np.asarray(historic_offset_trajectories)
         future_offset_trajectories = np.asarray(future_offset_trajectories)
         
         sample['historic'] = torch.tensor(historic_trajectories, dtype=torch.float32)
-        sample['future'] = torch.tensor(future_trajectories, dtype=torch.float32)
+        sample['future'] = torch.tensor(future_focal_agent, dtype=torch.float32)
+        sample['historic_focal'] = torch.tensor(historic_focal_agent, dtype=torch.float32)
+        sample['future_focal'] = torch.tensor(future_focal_agent, dtype=torch.float32)
         sample['offset_historic'] = torch.tensor(historic_offset_trajectories, dtype=torch.float32)
         sample['offset_future'] = torch.tensor(future_offset_trajectories, dtype=torch.float32)
         
