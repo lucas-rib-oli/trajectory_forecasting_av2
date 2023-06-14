@@ -4,7 +4,7 @@ train = dict(
     num_workers = 4,
     experiment_name = "AxialAttention_NLL_TFM", # closestLoss
     num_epochs = 200,
-    batch_size = 256,
+    batch_size = 1,
     resume_train = False,
 )
 

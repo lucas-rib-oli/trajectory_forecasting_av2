@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from rich.progress import track
 from metrics import Av2Metrics
 from configs import Config
-from losses import ClosestL2Loss
+from losses import ClosestL2Loss, NLLLoss
 from av_eval_forecasting import compute_forecasting_metrics
 # ===================================================================================== #
 # Configure constants
@@ -111,7 +111,7 @@ class TransformerEvaluation ():
                                                      name_pickle=self.name_pickle)
         self.val_dataloader = DataLoader (self.val_data, batch_size=1, num_workers=self.num_workers, shuffle=False, collate_fn=collate_fn)
         # ---------------------------------------------------------------------------------------------------- #
-        self.loss_fn = ClosestL2Loss()
+        self.loss_fn = NLLLoss()
         # ---------------------------------------------------------------------------------------------------- #
         print (Fore.CYAN + 'Device: ' + Fore.WHITE + self.device + Fore.RESET)
         print (Fore.CYAN + 'Experiment name: ' + Fore.WHITE + self.experiment_name + Fore.RESET)
@@ -183,7 +183,7 @@ class TransformerEvaluation ():
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj, offset_future_traj)
+                loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj)
                 validation_losses.append(loss.detach().cpu().numpy())
                 softmax = nn.Softmax(dim=-1)
                 scores = softmax(conf)
