@@ -35,7 +35,7 @@ _ESTIMATED_VEHICLE_LENGTH_M: Final[float] = 4.0
 _ESTIMATED_VEHICLE_WIDTH_M: Final[float] = 2.0
 _ESTIMATED_CYCLIST_LENGTH_M: Final[float] = 2.0
 _ESTIMATED_CYCLIST_WIDTH_M: Final[float] = 0.7
-_PLOT_BOUNDS_BUFFER_M: Final[float] = 30.0
+_PLOT_BOUNDS_BUFFER_M: Final[float] = 120.0
 
 _DRIVABLE_AREA_COLOR: Final[str] = "#262626"
 _LANE_SEGMENT_COLOR: Final[str] = "#E0E0E0"
@@ -111,6 +111,8 @@ parser.add_argument(
     help='specify the split of dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 parser.add_argument('--idx', type=int, default=0)
+parser.add_argument('--path_2_save', type=str, default='/home/lribeiro/TFM/resultados/map_implementation', help='Path to the save the fig')
+
 args = parser.parse_args()
 # ===================================================================================== #
 def normalice_heading (angle):
@@ -176,7 +178,7 @@ def get_av2_data (split: str, idx: int = 150) -> Tuple[ArgoverseScenario, Argove
     
     return scenario, static_map
 
-def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticMap, model: TransTraj) -> None:
+def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticMap, model: TransTraj, idx, frames: List[Image] = []) -> None:
     """Build dynamic visualization for all tracks and the local map associated with an Argoverse scenario.
 
     Note: This function uses OpenCV to create a MP4 file using the MP4V codec.
@@ -185,9 +187,9 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         scenario: Argoverse scenario to visualize.
         static_map: Local static map elements associated with `scenario`.
         save_path: Path where output MP4 video should be saved.
+        frames: Build each frame for the video
     """
-    # Build each frame for the video
-    frames: List[Image] = []
+    
     plot_bounds: _PlotBounds = (0, 0, 0, 0)
     # Get focal/target agent
     for track in scenario.tracks:
@@ -212,8 +214,7 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
                           [                   0.0,                 0.0, 1.0,                                                                    0.0],
                           [                   0.0,                 0.0, 0.0,                                                                    1.0]])
     
-    _, ax = plt.subplots()
-    ax.set_facecolor('darkgray')
+    fig, ax = plt.subplots(figsize=(16, 16))
     # ----------------------------------------------------------------------- #
     # Transform coordinates to target-centric
     for track in scenario.tracks:
@@ -302,7 +303,7 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         concatenated_lanes = np.concatenate ((transformed_left_lane_boundary, transformed_right_lane_boundary[::-1]), axis=0)
         _plot_polygons([concatenated_lanes], alpha=1, color=_DRIVABLE_AREA_COLOR)
     # ----------------------------------------------------------------------- #
-    _plot_actor_predictions (ax, scenario, scene_lanes_data, model)
+    cur_plot_bounds = _plot_actor_predictions (ax, scenario, scene_lanes_data, model)
     # ----------------------------------------------------------------------- #
     # Transform drivable area to target-centric  
     # for drivable_area in static_map.vector_drivable_areas.values():
@@ -321,7 +322,17 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         prueba = np.concatenate([transformed_edge1_xyz, transformed_edge2_xyz ], axis=0)
         _plot_polygons([prueba ], alpha=0.6, color=_PEDESTRIAN_CROSSING_COLOR)
     # ----------------------------------------------------------------------- #
-    plt.show()
+    plt.gca().set_aspect("equal", adjustable="box")
+    # plt.xlim(cur_plot_bounds[0] - _PLOT_BOUNDS_BUFFER_M, cur_plot_bounds[1] + _PLOT_BOUNDS_BUFFER_M)
+    # plt.ylim(cur_plot_bounds[2] - _PLOT_BOUNDS_BUFFER_M, cur_plot_bounds[3] + _PLOT_BOUNDS_BUFFER_M)
+    plt.xlim(- 60, 100)
+    plt.ylim(- 50, 15)
+    ax.set_axis_off()
+    # ax.set_facecolor('darkgray')
+    fig.set_facecolor('darkgray')
+    filename_path: str = os.path.join (args.path_2_save, str(idx) + '.png')
+    plt.savefig(filename_path,  bbox_inches='tight')
+    # plt.show()
     return
     for timestep in range(_OBS_DURATION_TIMESTEPS + _PRED_DURATION_TIMESTEPS):
         _, ax = plt.subplots()
@@ -350,8 +361,6 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         plt.close()
         buf.seek(0)
         frame = img.open(buf)
-        cv2.imshow('frame: ', frame)
-        cv2.waitKey(0)
         frames.append(frame)
 
 
@@ -459,7 +468,8 @@ def _plot_actor_tracks(ax: plt.Axes, scenario: ArgoverseScenario, timestep: int)
                     (_ESTIMATED_CYCLIST_LENGTH_M, _ESTIMATED_CYCLIST_WIDTH_M),
                 )
             else:
-                plt.plot(actor_trajectory[-1, 0], actor_trajectory[-1, 1], "o", color=track_color, markersize=4)
+                # plt.plot(actor_trajectory[-1, 0], actor_trajectory[-1, 1], "o", facecolor=track_color, edgecolor='white', markersize=4)
+                plt.scatter(actor_trajectory[-1, 0], actor_trajectory[-1, 1], marker='o', facecolor=track_color, edgecolor='white', s=50)
 
     return track_bounds
 
@@ -475,15 +485,18 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, scene_la
         src_actor_trajectory = actor_state[:_OBS_DURATION_TIMESTEPS]
         # Get target actor trajectory and heading history -> forescated or predicted trajectory
         tgt_actor_trajectory = actor_state[_OBS_DURATION_TIMESTEPS:_TOTAL_DURATION_TIMESTEPS]
+        
+        concat_trajectories = []
+        concat_trajectories.append(actor_state)
         # ----------------------------------------------------------------------- #
         # Prepare to the model
         lanes = []
-        for lane_data in scene_lane_data:
+        for lane_id, lane_data in enumerate(scene_lane_data):
             shape_vector = lane_data['left_lane_boundary'].shape
             is_intersection_v = np.repeat (int(lane_data['is_intersection']), shape_vector[0]).reshape(shape_vector[0], 1)
             left_mark_type_v = np.repeat (lane_data['left_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
             right_mark_type_v = np.repeat (lane_data['right_mark_type'], shape_vector[0]).reshape(shape_vector[0], 1)
-            id_v = np.repeat (lane_data['ID'], shape_vector[0]).reshape(shape_vector[0], 1)
+            id_v = np.repeat (lane_id, shape_vector[0]).reshape(shape_vector[0], 1)
             left_lane_feat = np.hstack ((lane_data['left_lane_boundary'], is_intersection_v, left_mark_type_v, id_v))
             right_lane_feat = np.hstack ((lane_data['right_lane_boundary'], is_intersection_v, right_mark_type_v, id_v))
             lanes.append(left_lane_feat)
@@ -491,7 +504,6 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, scene_la
         lanes = np.asarray(lanes)
         lanes = torch.tensor(lanes, dtype=torch.float32).unsqueeze(0)
         lanes: torch.Tensor = torch.cat ([lanes[:,:,:,:2], lanes[:,:,:,3:]],dim=-1) # Delete Z-coordinate
-        print ('lanes shape: ', lanes.shape)
         # ----------------------------------------------------------------------- #
         # Plot future
         color = '#8CED8C'
@@ -527,6 +539,8 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, scene_la
             # Number of trajectories
             K = pred.shape[0]
             for k in range(K):
+                concat_trajectories.append(pred[k])
+                
                 if k != index_with_highest_conf[0]:
                     color = '#D7ADED'
                     label = 'other prediction'
@@ -581,6 +595,14 @@ def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, scene_la
                 linewidth=3.2,
                 zorder=_FORECASTED_TRAJECTORIES_ZORDER,
                 head_width=1.1)
+    # ----------------------------------------------------------------------- #
+    # Get bounds
+    all_trajectories = np.concatenate((concat_trajectories), axis=0)
+    x_min, x_max = all_trajectories[:, 0].min(), all_trajectories[:, 0].max()
+    y_min, y_max = all_trajectories[:, 1].min(), all_trajectories[:, 1].max()
+    track_bounds = (x_min, x_max, y_min, y_max)
+    return track_bounds
+        
             
 def _plot_polylines(
     polylines: Sequence[NDArrayFloat],
@@ -689,6 +711,9 @@ def _plot_actor_bounding_box_gradient (ax: plt.Axes, actor_trajectory: NDArrayFl
         rect = ax.add_patch(vehicle_bounding_box)
 
 if __name__ == '__main__':
-    scenario, static_map = get_av2_data(split=args.split, idx=args.idx)
     model = get_model()
-    visualize_scenario (scenario, static_map, model)
+    index_to_save = [102, 113, 180, 955]
+    for idx in index_to_save:
+        scenario, static_map = get_av2_data(split=args.split, idx=idx)
+        visualize_scenario (scenario, static_map, model, idx)
+        
