@@ -26,10 +26,10 @@ model = dict(
     future_size = 60, # Output trajectory size || 12 output poses
     num_queries = 6, # Number of trajectories of a target || K = 6
     dec_out_size = 6*60, # 6 * 12
-    d_model = 128,
-    nhead = 2,
-    N = 2, # Numer of decoder/encoder layers
-    dim_feedforward = 256,
+    d_model = 512,
+    nhead = 8,
+    N = 6, # Numer of decoder/encoder layers
+    dim_feedforward = 2048,
     dropout = 0.1,
     # Subgraph
     subgraph_width = 32,
