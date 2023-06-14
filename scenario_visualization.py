@@ -35,7 +35,7 @@ _ESTIMATED_VEHICLE_LENGTH_M: Final[float] = 4.0
 _ESTIMATED_VEHICLE_WIDTH_M: Final[float] = 2.0
 _ESTIMATED_CYCLIST_LENGTH_M: Final[float] = 2.0
 _ESTIMATED_CYCLIST_WIDTH_M: Final[float] = 0.7
-_PLOT_BOUNDS_BUFFER_M: Final[float] = 30.0
+_PLOT_BOUNDS_BUFFER_M: Final[float] = 120.0
 
 _DRIVABLE_AREA_COLOR: Final[str] = "#262626"
 _LANE_SEGMENT_COLOR: Final[str] = "#E0E0E0"
@@ -73,6 +73,25 @@ _STATIC_OBJECT_TYPES: Set[ObjectType] = {
     ObjectType.RIDERLESS_BICYCLE,
 }
 
+# Lane class dict
+LANE_MARKTYPE_DICT = {
+    "DASH_SOLID_YELLOW": 1,
+    "DASH_SOLID_WHITE": 2,
+    "DASHED_WHITE": 3,
+    "DASHED_YELLOW": 4,
+    "DOUBLE_SOLID_YELLOW": 5,
+    "DOUBLE_SOLID_WHITE": 6,
+    "DOUBLE_DASH_YELLOW": 7,
+    "DOUBLE_DASH_WHITE": 8,
+    "SOLID_YELLOW": 9,
+    "SOLID_WHITE": 10,
+    "SOLID_DASH_WHITE": 11,
+    "SOLID_DASH_YELLOW": 12,
+    "SOLID_BLUE": 13,
+    "NONE": 14,
+    "UNKNOWN": 15
+}
+
 # ===================================================================================== #
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -92,6 +111,8 @@ parser.add_argument(
     help='specify the split of dataset')
 parser.add_argument('--path_2_configuration', type=str, default='configs/config_files/transtraj_config.py', help='Path to the configuration')
 parser.add_argument('--idx', type=int, default=0)
+parser.add_argument('--path_2_save', type=str, default='/home/lribeiro/TFM/resultados/multi_modal', help='Path to the save the fig')
+
 args = parser.parse_args()
 # ===================================================================================== #
 def normalice_heading (angle):
@@ -115,7 +136,7 @@ def get_model ():
     lane_channels = model_config['lane_channels']
     
     train_config = cfg.get('train')
-    device = train_config['device']
+    device = 'cpu'
     num_epochs = train_config['num_epochs']
     batch_size = train_config['batch_size']
     num_workers = train_config['num_workers']
@@ -157,7 +178,7 @@ def get_av2_data (split: str, idx: int = 150) -> Tuple[ArgoverseScenario, Argove
     
     return scenario, static_map
 
-def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticMap, model: TransTraj) -> None:
+def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticMap, model: TransTraj, idx, frames: List[Image] = []) -> None:
     """Build dynamic visualization for all tracks and the local map associated with an Argoverse scenario.
 
     Note: This function uses OpenCV to create a MP4 file using the MP4V codec.
@@ -166,9 +187,9 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         scenario: Argoverse scenario to visualize.
         static_map: Local static map elements associated with `scenario`.
         save_path: Path where output MP4 video should be saved.
+        frames: Build each frame for the video
     """
-    # Build each frame for the video
-    frames: List[Image] = []
+    
     plot_bounds: _PlotBounds = (0, 0, 0, 0)
     # Get focal/target agent
     for track in scenario.tracks:
@@ -193,8 +214,7 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
                           [                   0.0,                 0.0, 1.0,                                                                    0.0],
                           [                   0.0,                 0.0, 0.0,                                                                    1.0]])
     
-    _, ax = plt.subplots()
-    ax.set_facecolor('darkgray')
+    fig, ax = plt.subplots(figsize=(16, 16))
     # ----------------------------------------------------------------------- #
     # Transform coordinates to target-centric
     for track in scenario.tracks:
@@ -280,7 +300,17 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         prueba = np.concatenate([transformed_edge1_xyz, transformed_edge2_xyz ], axis=0)
         _plot_polygons([prueba ], alpha=0.6, color=_PEDESTRIAN_CROSSING_COLOR)
     # ----------------------------------------------------------------------- #
-    plt.show()
+    plt.gca().set_aspect("equal", adjustable="box")
+    # plt.xlim(cur_plot_bounds[0] - _PLOT_BOUNDS_BUFFER_M, cur_plot_bounds[1] + _PLOT_BOUNDS_BUFFER_M)
+    # plt.ylim(cur_plot_bounds[2] - _PLOT_BOUNDS_BUFFER_M, cur_plot_bounds[3] + _PLOT_BOUNDS_BUFFER_M)
+    plt.xlim(- 60, 100)
+    plt.ylim(- 50, 15)
+    ax.set_axis_off()
+    # ax.set_facecolor('darkgray')
+    fig.set_facecolor('darkgray')
+    filename_path: str = os.path.join (args.path_2_save, str(idx) + '.png')
+    plt.savefig(filename_path,  bbox_inches='tight')
+    # plt.show()
     return
     for timestep in range(_OBS_DURATION_TIMESTEPS + _PRED_DURATION_TIMESTEPS):
         _, ax = plt.subplots()
@@ -309,8 +339,6 @@ def visualize_scenario(scenario: ArgoverseScenario, static_map: ArgoverseStaticM
         plt.close()
         buf.seek(0)
         frame = img.open(buf)
-        cv2.imshow('frame: ', frame)
-        cv2.waitKey(0)
         frames.append(frame)
 
 
@@ -418,11 +446,12 @@ def _plot_actor_tracks(ax: plt.Axes, scenario: ArgoverseScenario, timestep: int)
                     (_ESTIMATED_CYCLIST_LENGTH_M, _ESTIMATED_CYCLIST_WIDTH_M),
                 )
             else:
-                plt.plot(actor_trajectory[-1, 0], actor_trajectory[-1, 1], "o", color=track_color, markersize=4)
+                # plt.plot(actor_trajectory[-1, 0], actor_trajectory[-1, 1], "o", facecolor=track_color, edgecolor='white', markersize=4)
+                plt.scatter(actor_trajectory[-1, 0], actor_trajectory[-1, 1], marker='o', facecolor=track_color, edgecolor='white', s=50)
 
     return track_bounds
 
-def _plot_actor_predictions (ax: plt.Axes, scenario: ArgoverseScenario, model: TransTraj):
+def _plot_actor_predictions (ax: plt.Axes, scenario, model: TransTraj):
     
     for track in scenario.tracks:
         # Only predict focal track
@@ -630,6 +659,9 @@ def _plot_actor_bounding_box_gradient (ax: plt.Axes, actor_trajectory: NDArrayFl
         rect = ax.add_patch(vehicle_bounding_box)
 
 if __name__ == '__main__':
-    scenario, static_map = get_av2_data(split=args.split, idx=args.idx)
     model = get_model()
-    visualize_scenario (scenario, static_map, model)
+    index_to_save = [102, 113, 180, 955]
+    for idx in index_to_save:
+        scenario, static_map = get_av2_data(split=args.split, idx=idx)
+        visualize_scenario (scenario, static_map, model, idx)
+        
