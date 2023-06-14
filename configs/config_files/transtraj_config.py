@@ -1,6 +1,6 @@
 
 train = dict(
-    device = "cuda:2",
+    device = "cpu",
     num_workers = 6,
     experiment_name = "trajectory_proposal_tgtUnMasked_NoPosEnc_TFM",
     num_epochs = 200,
