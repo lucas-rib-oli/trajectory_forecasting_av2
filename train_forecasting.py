@@ -192,7 +192,7 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred, conf = self.model (historic_traj, future_traj_focal.unsqueeze(1), lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
                 # Omit agent axis
                 pred = pred.squeeze(1)
                 conf = conf.squeeze(1)
@@ -271,7 +271,7 @@ class TransformerTrain ():
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
-                pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
+                pred, conf = self.model (historic_traj, future_traj_focal.unsqueeze(1), lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
                 total_loss, reg_loss, cls_loss = self.loss_fn(pred.squeeze(1), conf.squeeze(1), future_traj_focal)
                 validation_total_losses.append(total_loss.detach().cpu().numpy())
                 validation_reg_losses.append(reg_loss.detach().cpu().numpy())
