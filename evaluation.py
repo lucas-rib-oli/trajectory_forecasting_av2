@@ -19,6 +19,7 @@ from metrics import Av2Metrics
 from configs import Config
 from losses import ClosestL2Loss, NLLLoss
 from av_eval_forecasting import compute_forecasting_metrics
+import time
 # ===================================================================================== #
 # Configure constants
 _OBS_DURATION_TIMESTEPS: Final[int] = 50 # The first 5 s of each scenario is denoted as the observed window
@@ -111,7 +112,7 @@ class TransformerEvaluation ():
                                                      name_pickle=self.name_pickle)
         self.val_dataloader = DataLoader (self.val_data, batch_size=1, num_workers=self.num_workers, shuffle=False, collate_fn=collate_fn)
         # ---------------------------------------------------------------------------------------------------- #
-        self.loss_fn = NLLLoss()
+        self.loss_fn = ClosestL2Loss()
         # ---------------------------------------------------------------------------------------------------- #
         print (Fore.CYAN + 'Device: ' + Fore.WHITE + self.device + Fore.RESET)
         print (Fore.CYAN + 'Experiment name: ' + Fore.WHITE + self.experiment_name + Fore.RESET)
@@ -158,21 +159,25 @@ class TransformerEvaluation ():
         brier_minADE_metrics = []
         brier_minFDE_metrics = []
         
+        avg_time = []
+        
         forecasted_trajectories = {}
         gt_trajectories = {}
         forecasted_probabilities = {}
         id_obs = 0
-        for idx, data in enumerate(self.val_dataloader):
+        for idx, data in enumerate(self.val_dataloader):    
             # Set no requires grad
             with torch.no_grad():                
                 historic_traj: torch.Tensor = data['historic']
                 future_traj: torch.Tensor = data['future']
+                future_traj_focal: torch.Tensor = data['future_focal']
                 offset_future_traj: torch.Tensor = data['offset_future']
                 lanes: torch.Tensor = torch.cat ([data['lanes'][:,:,:,:2], data['lanes'][:,:,:,3:]],dim=-1)
                 lanes_mask: torch.Tensor = data['lanes_mask']
                 # Pass to device
                 historic_traj = historic_traj.to(self.device) 
                 future_traj = future_traj.to(self.device)
+                future_traj_focal = future_traj_focal.to(self.device)
                 offset_future_traj = offset_future_traj.to(self.device)
                 lanes = lanes.to(self.device)
                 lanes_mask = lanes_mask.to(self.device)
@@ -182,22 +187,29 @@ class TransformerEvaluation ():
                 # ----------------------------------------------------------------------- #
                 # Output model
                                    # x-7 ... x0 | x1 ... x7
+                # ----------------------------------------------------------------------- #
+                # Set initial time to inference
+                start_time = time.time()
                 pred, conf = self.model (historic_traj, future_traj, lanes, src_mask=None, tgt_mask=None, src_padding_mask=None, tgt_padding_mask=None) # return -> x1 ... x7
-                loss, reg_loss, cls_loss = self.loss_fn(pred, conf, future_traj)
+                # End time to inference
+                end_time = time.time()
+                avg_time.append((end_time - start_time)*1e3)
+                # ----------------------------------------------------------------------- #
+                loss, reg_loss, cls_loss = self.loss_fn(pred.squeeze(1), conf.squeeze(1), future_traj_focal)
                 validation_losses.append(loss.detach().cpu().numpy())
                 softmax = nn.Softmax(dim=-1)
                 scores = softmax(conf)
                 # ----------------------------------------------------------------------- #
+                focal_pred = pred.squeeze(1)
+                focal_score = scores.squeeze(1)
                 # Get trajectories
-                for i, predicted_batch in enumerate(pred): # bs, a, k, f, d
-                    for idx_agent, agent_predicted in enumerate(predicted_batch):# a, k, f, d
-                        if valid_agents_mask[i,idx_agent]: 
-                            forecasted_trajectories[id_obs] = []
-                            gt_trajectories[id_obs] = future_traj[i][idx_agent][:,0:2].cpu().numpy()
-                            forecasted_probabilities[id_obs] = scores[i][idx_agent].cpu().numpy()
-                            for forescasted_traj in agent_predicted:
-                                forecasted_trajectories[id_obs].append(forescasted_traj.cpu().numpy()[:,0:2])
-                            id_obs += 1
+                for i, predicted_batch in enumerate(focal_pred): # bs, k, f, d
+                    forecasted_trajectories[id_obs] = []
+                    gt_trajectories[id_obs] = future_traj_focal[i, :,0:2].cpu().numpy()
+                    forecasted_probabilities[id_obs] = focal_score[i].cpu().numpy()
+                    for forescasted_traj in predicted_batch:
+                        forecasted_trajectories[id_obs].append(forescasted_traj.cpu().numpy()[:,0:2])
+                    id_obs += 1
         # ----------------------------------------------------------------------- #
         validation_loss = np.mean(validation_losses)
         # ----------------------------------------------------------------------- #
@@ -206,6 +218,7 @@ class TransformerEvaluation ():
             print(Fore.GREEN + key + ': ' + Fore.WHITE, "{:.4f}".format(value))
         print (Fore.GREEN + 'Validation loss:' + Fore.WHITE, validation_loss)
         print (Fore.GREEN + 'Forecasted trajectories: ' + Fore.WHITE, len(forecasted_trajectories))
+        print (Fore.GREEN + 'Average time (ms): ' + Fore.WHITE, np.mean(avg_time))
         # Compute metrics argoverse
         
     # ---------------------------------------------------------------------------------------------------- #
