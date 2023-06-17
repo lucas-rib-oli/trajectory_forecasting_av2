@@ -2,7 +2,7 @@
 train = dict(
     device = "cuda:0",
     num_workers = 12,
-    experiment_name = "AxialAttention_Huber_OnlyFOCAL_TFM", # closestLoss
+    experiment_name = "AxialAttention_Huber_OnlyFOCALv2_TFM", # closestLoss
     num_epochs = 600,
     batch_size = 256,
     resume_train = False,
